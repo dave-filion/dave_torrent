@@ -10,63 +10,19 @@ use std::net::{UdpSocket, ToSocketAddrs, SocketAddr, IpAddr};
 use bytebuffer::ByteBuffer;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
 
-
-fn main() {
-    // load torrent file data
-    let filepath = "tears-of-steel.torrent";
-
-    let torrent = Torrent::read_from_file(filepath).unwrap();
-
-    println!("{}", torrent);
-    println!("info hash: {}", torrent.info_hash());
-
-    let total_size = torrent.length;
-    let piece_size = torrent.piece_length;
-    println!("Total size = {} bytes", total_size);
-    println!("Piece size = {} bytes", piece_size);
-
-    let all_files = torrent.files.expect("Should be files");
-    println!("{} files:", all_files.len());
-    for f in all_files {
-        println!("{:?} : {} bytes", f.path, f.length);
+fn print_byte_array(header: &str, bytes: &[u8]) {
+    print!("{} => [", header);
+    for b in bytes {
+        print!(" {:X?}, ", b);
     }
+    println!("]");
+}
 
-    let pieces = torrent.pieces;
-    println!("{} pieces", pieces.len());
-
-    let announce_url = torrent.announce.expect("Need announce");
-    println!("announce: {}", announce_url);
-
-    // check protocol of announce
-    let pieces: Vec<String> = announce_url.split("://").map(|s| s.to_string()).collect(); // seperates protocol from url
-    println!("pieces = {:?}", pieces);
-    let protocol = pieces[0].as_str();
-
-    if protocol != "udp" {
-        panic!("cant handle non udp protocol: {}", protocol);
-    }
-
-    let url = pieces[1].as_str();
-    println!("remote tracking url: {}", url);
-
-    // convert to remote sock addr
-    let remote_addr = url.to_socket_addrs().unwrap().next().unwrap();
-    println!("remove addr {:?}", remote_addr);
-
-    // // bind socket to local port
-    let local_address  = "0.0.0.0:34254";
-    let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
-    println!("udp socket bound to local port: {:?}", sock);
-
-    // // connect to remote addr
-    sock.connect(remote_addr).expect("couldnt connect");
-    println!("socket connected to remote addr = {:?}", sock);
-
-    // make connection request packet
+fn make_connect_packet() -> Vec<u8> {
     let mut bytebuf = ByteBuffer::new();
 
     // write connection id
-    let conn_id : u64= 0x41727101980;
+    let conn_id : u64= 0x41727101980; // constant for connecting
     bytebuf.write_u64(conn_id);
 
     // write action = 0
@@ -75,33 +31,13 @@ fn main() {
 
     // write random tx id (4 bytes)
     let random_tx_id = rand::thread_rng().gen::<[u8; 4]>();
-    println!("tx-id= {:X?}", random_tx_id);
     bytebuf.write_bytes(&random_tx_id);
-    println!("buf len: {:?}", bytebuf.len());
 
-    let packet = bytebuf.to_bytes();
+    bytebuf.to_bytes()
+}
 
-    print!("Request => [");
-    for b in &packet {
-        print!(" {:X?}, ", b);
-    }
-    println!("]");
-
-    // send message to remote udp port
-    sock.send_to(&packet, url);
-
-    // listen for response
-    let mut response_buf = [0; 16];
-    let _num_bytes = sock.recv(&mut response_buf).expect("Didnt recieve data");
-
-    print!("Response => [");
-    for i in 0..response_buf.len() {
-        let byte = response_buf[i];
-        print!(" {:X?}, ", byte);
-    }
-    println!("]");
-
-    // get connection id from response (at index 8, 8 bytes)
+fn get_conn_id_from_connect_response(response_buf: &[u8]) -> (u64, Vec<u8>) {
+    // get connection id from response (at index 7, 8 bytes)
     let mut conn_id_buff = [0; 8];
     let mut j = 0;
     for i in 8..16 {
@@ -109,21 +45,122 @@ fn main() {
         conn_id_buff[j] = byte;
         j+=1;
     }
-
-    print!("Conn id => [");
-    for i in 0..conn_id_buff.len() {
-        let byte = conn_id_buff[i];
-        print!(" {:X?}, ", byte);
-    }
-    println!("]");
-
     // convert conn id to u64
     let mut byte_rdr = Cursor::new(conn_id_buff);
-    let conn_id : u64 = byte_rdr.read_u64::<BigEndian>().unwrap();
-    println!("conn id = {}", conn_id);
+    (byte_rdr.read_u64::<BigEndian>().unwrap(), conn_id_buff.to_vec())
+}
+
+fn make_announce_packet(conn_id_bytes: &Vec<u8>, info_hash_bytes: &Vec<u8>) -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+
+    // conn id (8 bytes)
+    buf.write_bytes(&conn_id_bytes);
+
+    // action (1 for announce, 4 bytes)
+    buf.write_u32(1);
+
+    // transaction_id (random 4 bytes)
+    buf.write_bytes(&rand::thread_rng().gen::<[u8; 4]>());
+
+    // info hash (20 bytes)
+    buf.write_bytes(&info_hash_bytes);
+
+    // peer id (random 20 bytes)
+    let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+    buf.write_bytes(&peer_id);
+
+    // downloaded (8 bytes, just zeros here)
+    buf.write_bytes(&[0; 8]);
+
+    // left (8 bytes)
+
+    // uploaded (8 bytes)
+
+    // event (4 bytes) 0: none, 1: completed, 2: started, 3: stopped
+
+
+    buf.to_bytes()
+}
+
+fn get_socket_addr(announce_url : &str) -> SocketAddr {
+    let pieces: Vec<String> = announce_url.split("://").map(|s| s.to_string()).collect(); // seperates protocol from url
+    let protocol = pieces[0].as_str();
+    if protocol != "udp" {
+        panic!("cant handle non udp protocol: {}", protocol);
+    }
+
+    let url = pieces[1].as_str();
+    url.to_socket_addrs().unwrap().next().unwrap()
+}
+
+fn main() {
+    // load torrent file data
+    let filepath = "tears-of-steel.torrent";
+
+    let torrent = Torrent::read_from_file(filepath).unwrap();
+
+    let info_hash = torrent.info_hash();
+    let info_hash_bytes = torrent.info_hash_bytes();
+    let total_size = torrent.length;
+    let piece_size = torrent.piece_length;
+    let announce_url = torrent.announce.expect("Need announce");
+
+    println!("Total size = {} bytes", total_size);
+    println!("Piece size = {} bytes", piece_size);
+    println!("info hash = {}", info_hash);
+    print_byte_array("info hash bytes", &info_hash_bytes);
+    println!("announce: {}", announce_url);
+
+    // // bind socket to local port
+    let local_address  = "0.0.0.0:34254";
+    let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
+    println!("udp socket bound to local port: {:?}", sock);
+
+    // // connect to remote addr
+    let remote_addr = get_socket_addr(announce_url.as_str());
+    sock.connect(remote_addr).expect("couldnt connect");
+    println!("socket connected to remote addr = {:?}", sock);
+
+    // make connection request packet
+    let connect_packet = make_connect_packet();
+    print_byte_array("Request", &connect_packet);
+
+    // send message to remote udp port
+    sock.send(&connect_packet);
+    // sock.send_to(&connect_packet, url);
+
+    // listen for response
+    let mut response_buf = [0; 16];
+    let _num_bytes = sock.recv(&mut response_buf).expect("Didnt recieve data");
+    print_byte_array("Response", &response_buf);
+
+    // extract conn id
+    let (conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
+    print_byte_array("conn id", &conn_id_bytes);
 
     // now send announce message
+    let announce_packet = make_announce_packet(
+        &conn_id_bytes,
+        &info_hash_bytes);
+    print_byte_array("Announce", &announce_packet);
 
 
+
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_make_announce_packet() {
+        let conn_id_bytes = [0x10,  0x38,  0x94,  0xC3,  0x73,  0x6B,  0x76,  0xB2].to_vec();
+        let info_hash_bytes = [0xAA, 0x16, 0x30, 0x38, 0x78, 0x53, 0x79, 0x81, 0x90, 0x75, 0x43, 0x56, 0x11, 0x51, 0x73, 0x33, 0x45, 0x89, 0x19, 0xCC].to_vec();
+        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes);
+
+        print_byte_array("result", &result);
+
+
+    }
 
 }
