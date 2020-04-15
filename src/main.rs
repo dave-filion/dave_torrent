@@ -1,8 +1,8 @@
 use rand::Rng;
-use std::io::Cursor;
+use std::io::{Cursor, SeekFrom};
 
 use bytebuffer::ByteBuffer;
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 
@@ -160,6 +160,40 @@ fn send_announce_req(
     // do something with it
 }
 
+fn get_u32_at(from: &[u8], index: usize) -> u32 {
+    let mut buf = [0; 4];
+    let mut j = 0;
+    for i in index..index+4 {
+        let b = from[i];
+        buf[j] = b;
+        j+= 1;
+    }
+    // conert from bytes to u32
+    BigEndian::read_u32(&buf)
+}
+
+fn parse_announce_response(resp: &Vec<u8>) {
+    // 0  - 4b - action (1)
+    // 4  - 4b - transaction_id
+    // 8  - 4b - interval
+    // 12 - 4b - leechers
+    // 16 - 4b - seeders
+    // 20 + 6 * n - 4b - ip address
+    // 24 + 6 * n - 2b - TCP port
+
+    // go to byte 4 to get transaction id
+    let tx_id = get_u32_at(resp, 4);
+
+    let interval = get_u32_at(resp, 8);
+
+    let leechers = get_u32_at(resp, 12);
+
+    let seeders = get_u32_at(resp, 16);
+
+
+
+}
+
 fn main() {
     // load torrent file data
     let filepath = "tears-of-steel.torrent";
@@ -226,6 +260,16 @@ mod test {
 fn test_announce() {
     let sample_announce_resp = [0x0, 0x0, 0x0, 0x1, 0x65, 0x48, 0x92, 0x2D, 0x0, 0x0, 0x6, 0xB8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x9, 0x42, 0x6C, 0x62, 0x33, 0x85, 0xD8, 0xDB, 0x5B, 0x8B, 0xEB, 0xE8, 0x74, 0xDB, 0x5B, 0x8B, 0xEB, 0xC8, 0x54, 0xD8, 0x24, 0xF, 0x65, 0xC8, 0xD5, 0xD0, 0x48, 0xC0, 0xE5, 0x83, 0x1E, 0x54, 0x11, 0x35, 0xA9, 0xC8, 0xD5, 0x4F, 0x58, 0xB2, 0x94, 0x60, 0x87, 0x4A, 0x3A, 0x73, 0x24, 0xBF, 0x7F, 0x47, 0x3A, 0xFC, 0x7A, 0x1E, 0xC9, 0x44, 0xA8, 0xB2, 0x15, 0xC8, 0xD5];
 
+}
+
+#[test]
+fn test_get_u32_at_position() {
+    let buffer = [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0];
+    let result = get_u32_at(&buffer, 4);
+    assert_eq!(result, 2);
+
+    let result = get_u32_at(&buffer, 0);
+    assert_eq!(result, 0);
 }
 
 }
