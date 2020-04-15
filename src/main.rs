@@ -50,7 +50,11 @@ fn get_conn_id_from_connect_response(response_buf: &[u8]) -> (u64, Vec<u8>) {
     (byte_rdr.read_u64::<BigEndian>().unwrap(), conn_id_buff.to_vec())
 }
 
-fn make_announce_packet(conn_id_bytes: &Vec<u8>, info_hash_bytes: &Vec<u8>) -> Vec<u8> {
+fn make_announce_packet(conn_id_bytes: &Vec<u8>,
+                        info_hash_bytes: &Vec<u8>,
+    torrent_size: u64,
+    port: u16
+) -> Vec<u8> {
     let mut buf = ByteBuffer::new();
 
     // conn id (8 bytes)
@@ -60,24 +64,43 @@ fn make_announce_packet(conn_id_bytes: &Vec<u8>, info_hash_bytes: &Vec<u8>) -> V
     buf.write_u32(1);
 
     // transaction_id (random 4 bytes)
-    buf.write_bytes(&rand::thread_rng().gen::<[u8; 4]>());
+    let tx_id = rand::thread_rng().gen::<[u8; 4]>();
+    print_byte_array("random tx id", &tx_id);
+    buf.write_bytes(&tx_id);
 
     // info hash (20 bytes)
     buf.write_bytes(&info_hash_bytes);
 
     // peer id (random 20 bytes)
     let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+    print_byte_array("random peer id", &peer_id);
     buf.write_bytes(&peer_id);
 
     // downloaded (8 bytes, just zeros here)
     buf.write_bytes(&[0; 8]);
 
-    // left (8 bytes)
+    // left (8 bytes) size of torrent
+    buf.write_u64(torrent_size);
 
-    // uploaded (8 bytes)
+    // uploaded (8 bytes, just zeros again)
+    buf.write_bytes(&[0; 8]);
 
-    // event (4 bytes) 0: none, 1: completed, 2: started, 3: stopped
+    // event (4 byte)
+    buf.write_u32(0);
 
+    // ip address (4 byte, also 0)
+    buf.write_u32(0);
+
+    // key (4 bytes, random)
+    let key = rand::thread_rng().gen::<[u8; 4]>();
+    print_byte_array("key", &key);
+    buf.write_bytes(&key);
+
+    // num_want (4 bytes, -1 is default)
+    buf.write_i32(-1);
+
+    // port (2 bytes)
+    buf.write_u16(port);
 
     buf.to_bytes()
 }
@@ -141,7 +164,10 @@ fn main() {
     // now send announce message
     let announce_packet = make_announce_packet(
         &conn_id_bytes,
-        &info_hash_bytes);
+        &info_hash_bytes,
+        torrent.length as u64,
+        34254 // default local port
+    );
     print_byte_array("Announce", &announce_packet);
 
 
@@ -154,13 +180,14 @@ mod test {
 
     #[test]
     fn test_make_announce_packet() {
+        let port = 6969;
+        let torrent_size = 1; // 1 so its easy to see in byte form
         let conn_id_bytes = [0x10,  0x38,  0x94,  0xC3,  0x73,  0x6B,  0x76,  0xB2].to_vec();
         let info_hash_bytes = [0xAA, 0x16, 0x30, 0x38, 0x78, 0x53, 0x79, 0x81, 0x90, 0x75, 0x43, 0x56, 0x11, 0x51, 0x73, 0x33, 0x45, 0x89, 0x19, 0xCC].to_vec();
-        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes);
+        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port);
 
         print_byte_array("result", &result);
-
-
+        assert_eq!(result.len(), 98);
     }
 
 }
