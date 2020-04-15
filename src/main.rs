@@ -8,6 +8,8 @@ use rand::Rng;
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{UdpSocket, ToSocketAddrs, SocketAddr, IpAddr};
 use bytebuffer::ByteBuffer;
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
+
 
 fn main() {
     // load torrent file data
@@ -114,6 +116,14 @@ fn main() {
         print!(" {:X?}, ", byte);
     }
     println!("]");
+
+    // convert conn id to u64
+    let mut byte_rdr = Cursor::new(conn_id_buff);
+    let conn_id : u64 = byte_rdr.read_u64::<BigEndian>().unwrap();
+    println!("conn id = {}", conn_id);
+
+    // now send announce message
+
 
 
 }
