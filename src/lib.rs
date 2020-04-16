@@ -171,9 +171,25 @@ pub fn send_announce_req(
         make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port, peer_id, tx_id);
     print_byte_array("Announce", &announce_packet);
 
+    // check write timeout
+    let wtimeout = sock.read_timeout().expect("couldnt get read timeout of socket");
+    if let Some(t) = wtimeout {
+        println!("Socket write timeout is {:?}", t);
+    } else {
+        println!("Socket has no write timeout, block indefinetly");
+    }
+
     let _result = sock.send(&announce_packet);
 
-    // listen for response
+    // check timeout
+    let timeout = sock.read_timeout().expect("couldnt get read timeout of socket");
+    if let Some(t) = timeout {
+        println!("Socket read timeout is {:?}", t);
+    } else {
+        println!("Socket has no read timeout, block indefinetly");
+    }
+
+    // listen for response TODO: need to implement timeout and retry
     let mut response_buf = [0; 128];
     let _num_bytes = sock.recv(&mut response_buf).unwrap();
     print_byte_array("announce resp", &response_buf);
@@ -301,7 +317,6 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
     // pstr
     let prot_string = "BitTorrent protocol";
     let prot_bytes = prot_string.as_bytes();
-    print_byte_array("bittorrent string", prot_bytes);
     buf.write_bytes(prot_bytes);
 
     // reserved bytes
@@ -314,6 +329,14 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
     buf.write_bytes(peer_id);
 
     buf.to_bytes()
+}
+
+pub fn parse_handshake_response(buf: &Vec<u8>) {
+    // 1 byte = 19
+    let strlen = buf.get(0).unwrap();
+    println!("len = {:?} (should be 19)", strlen as usize);
+
+
 }
 
 #[cfg(test)]
@@ -390,6 +413,13 @@ mod test {
         let pstr = [0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C];
         let s = from_utf8(&pstr).unwrap();
         println!("s => {}", s);
+    }
+
+    #[test]
+    fn test_tcp_handshake_response() {
+        let response = [0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0].to_vec();
+
+        parse_handshake_response(&response);
     }
 
     #[test]

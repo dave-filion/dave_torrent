@@ -63,7 +63,7 @@ fn main() {
         torrent.length as u64,
         34264,
         &peer_id,
-        &tx_id,
+        &tx_id
     );
     println!("Got announce result: {:?}", announce_resp);
     // check that tx id is the same
