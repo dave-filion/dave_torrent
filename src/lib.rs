@@ -5,6 +5,7 @@ use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -140,16 +141,17 @@ pub fn get_socket_addr(announce_url: &str) -> SocketAddr {
 
 pub fn send_connect_req(sock: &UdpSocket) -> Vec<u8> {
     let connect_packet = make_connect_packet();
-    print_byte_array("Request", &connect_packet);
+    //print_byte_array("Connect request", &connect_packet);
 
     // send message to remote udp port
     let _result = sock.send(&connect_packet);
+    println!("Send conn req... waiting for response...");
 
     // TODO: retry logic
     // listen for response
     let mut response_buf = [0; 16];
     let _num_bytes = sock.recv(&mut response_buf).expect("Didnt recieve data");
-    print_byte_array("Response", &response_buf);
+    //print_byte_array("Response", &response_buf);
 
     // extract conn id
     let (_conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
@@ -174,7 +176,12 @@ pub fn send_announce_req(
         peer_id,
         tx_id,
     );
-    print_byte_array("Announce", &announce_packet);
+    //print_byte_array("Announce", &announce_packet);
+
+    // set rw timemout
+    sock.set_write_timeout(Some(Duration::from_secs(5)));
+    sock.set_read_timeout(Some(Duration::from_secs(5)));
+
 
     // check write timeout
     let wtimeout = sock
@@ -187,6 +194,7 @@ pub fn send_announce_req(
     }
 
     let _result = sock.send(&announce_packet);
+    println!("Sent announce packet... waiting for response...");
 
     // check timeout
     let timeout = sock
@@ -201,7 +209,7 @@ pub fn send_announce_req(
     // listen for response TODO: need to implement timeout and retry
     let mut response_buf = [0; 128];
     let _num_bytes = sock.recv(&mut response_buf).unwrap();
-    print_byte_array("announce resp", &response_buf);
+    //print_byte_array("announce resp", &response_buf);
 
     // transform into announce response
     response_buf.to_vec().into()

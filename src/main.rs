@@ -22,18 +22,20 @@ fn main() {
     for i in 0..20 {
         info_hash_array[i] = info_hash_bytes.get(i).unwrap().clone();
     }
-    print_byte_array("info hash array",&info_hash_array);
 
     let total_size = torrent.length;
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.expect("Need announce");
 
+    println!("TORRENT INFO");
+    println!("------------------------------------");
     println!("Total size = {} bytes", total_size);
     println!("Piece size = {} bytes", piece_size);
     println!("info hash = {}", info_hash);
-    print_byte_array("info hash bytes", &info_hash_bytes);
-    println!("announce: {}", announce_url);
+    println!("announce url: {}", announce_url);
+    println!("------------------------------------\n");
 
+    println!("Connecting to tracker");
     // // bind socket to local port
     let local_address = "0.0.0.0:34254";
     let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
