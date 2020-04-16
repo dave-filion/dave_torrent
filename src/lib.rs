@@ -270,14 +270,7 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 }
 
 // tcp connection to peer
-// handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
-//
-// pstrlen: string length of <pstr>, as a single raw byte
-// pstr: string identifier of the protocol
-// reserved: eight (8) reserved bytes. All current implementations use all zeroes.
-// peer_id: 20-byte string used as a unique ID for the client.
-//
-// In version 1.0 of the BitTorrent protocol, pstrlen = 19, and pstr = "BitTorrent protocol".
+
 pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8;20]) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
     println!("connecting to remote socket at addr: {:?}", sock_addr);
@@ -291,9 +284,34 @@ pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8;20]) -> Result<TcpSt
 }
 
 // makes a tcp handshake packet
-fn make_handshake(peer_id: &[u8; 20]) -> Vec<u8> {
-    let buf = ByteBuffer::new();
+// handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
+//
+// pstrlen: string length of <pstr>, as a single raw byte
+// pstr: string identifier of the protocol
+// reserved: eight (8) reserved bytes. All current implementations use all zeroes.
+// peer_id: 20-byte string used as a unique ID for the client.
+//
+// In version 1.0 of the BitTorrent protocol, pstrlen = 19, and pstr = "BitTorrent protocol".
+pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
 
+    // pstrlen
+    buf.write_bytes(&[19u8; 1]);
+
+    // pstr
+    let prot_string = "BitTorrent protocol";
+    let prot_bytes = prot_string.as_bytes();
+    print_byte_array("bittorrent string", prot_bytes);
+    buf.write_bytes(prot_bytes);
+
+    // reserved bytes
+    buf.write_bytes(&[0u8; 8]);
+
+    // info hash
+    buf.write_bytes(info_hash);
+
+    // peer id
+    buf.write_bytes(peer_id);
 
     buf.to_bytes()
 }
@@ -302,6 +320,7 @@ fn make_handshake(peer_id: &[u8; 20]) -> Vec<u8> {
 mod test {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
+    use std::str::from_utf8;
 
     #[test]
     fn test_make_announce_packet() {
@@ -361,10 +380,16 @@ mod test {
 
     #[test]
     fn test_make_handshake() {
-        // make random 20 byte peer id
+        // make random 20 byte peer id and info hash
         let peer_id = rand::thread_rng().gen::<[u8;20]>();
-        let packet = make_handshake(&peer_id);
+        let info_hash = rand::thread_rng().gen::<[u8;20]>();
+
+        let packet = make_handshake(&peer_id, &info_hash);
         print_byte_array("handshake", &packet);
+        print_byte_array("peer_id", &peer_id);
+        let pstr = [0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C];
+        let s = from_utf8(&pstr).unwrap();
+        println!("s => {}", s);
     }
 
     #[test]

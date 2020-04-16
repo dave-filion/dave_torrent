@@ -1,5 +1,5 @@
 use rand::Rng;
-use std::io::{Cursor};
+use std::io::{Cursor, Write, Read};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
@@ -18,6 +18,13 @@ fn main() {
 
     let info_hash = torrent.info_hash();
     let info_hash_bytes = torrent.info_hash_bytes();
+    // turn info hash from vec into byte array of length 20
+    let mut info_hash_array = [0u8; 20];
+    for i in 0..20 {
+        info_hash_array[i] = info_hash_bytes.get(i).unwrap().clone();
+    }
+    print_byte_array("info hash array",&info_hash_array);
+
     let total_size = torrent.length;
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.expect("Need announce");
@@ -74,8 +81,30 @@ fn main() {
     // try connecting to all peers serially
     for (ip, port) in &peer_addrs {
         match connect_to_peer(ip.clone(), port.clone(), &peer_id) {
-            Ok(stream) => {
+            Ok(mut stream) => {
                 println!("got tcp stream");
+                // send handshake packet
+                let handshake = make_handshake(&peer_id, &info_hash_array);
+                print_byte_array("tcp handshake", &handshake);
+
+                // write handshake to stream
+                let write_result = stream.write(&handshake);
+                if let Ok(bytes_wrote) = write_result {
+                    println!("wrote {} bytes for tcp handshake", bytes_wrote);
+
+                    // listen for response
+                    let mut resp_buf = [0; 512];
+                    let read_result = stream.read(&mut resp_buf);
+                    if let Ok(bytes_read) = read_result {
+                        println!("Read {} bytes from tcp stream", bytes_read);
+                        // parse response
+                        print_byte_array("handshake response", &resp_buf);
+                    } else {
+                        println!("Handshake read error");
+                    }
+                } else {
+                    println!("Handshake failed");
+                }
             },
             Err(_) => {
                 println!("couldnt connect to {:?}", ip);
