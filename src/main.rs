@@ -4,9 +4,20 @@ use std::io::{Cursor};
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use lava_torrent::torrent::v1::Torrent;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket, IpAddr};
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket, TcpStream, IpAddr};
 
 use dave_torrent::*;
+
+// tcp connection to peer
+fn connect_to_peer(ip: IpAddr, port: u16) {
+    let sock_addr = SocketAddr::new(ip, port);
+    println!("connecting to remote socket at addr: {:?}", sock_addr);
+    if let Ok(stream) = TcpStream::connect(sock_addr) {
+        println!("connected to peer @ {:?}", sock_addr);
+    } else {
+        println!("Failed to connect to peer");
+    }
+}
 
 fn main() {
     // load torrent file data
@@ -41,21 +52,33 @@ fn main() {
     print_byte_array("conn id", &conn_id_bytes);
 
     // send announce request
-    let result = send_announce_req(
+    let announce_resp = send_announce_req(
         &sock,
         &conn_id_bytes,
         &info_hash_bytes,
         torrent.length as u64,
         34264,
     );
+    println!("Got announce result: {:?}", announce_resp);
 
-    println!("Got announce result: {:?}", result);
+    // get list of peers
+    let peer_addrs = announce_resp.addresses;
+    println!("List of {} peers:", peer_addrs.len());
+    for p in &peer_addrs {
+        let (addr, port) = p;
+        println!("-> {:?}:{:?}", addr, port);
+    }
+
+    // try connecting to peers
+    for (ip, port) in &peer_addrs {
+        connect_to_peer(ip.clone(), port.clone());
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::net::IpAddr;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn test_make_announce_packet() {
@@ -109,5 +132,24 @@ mod test {
 
         let result = get_u32_at(&buffer, 0);
         assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn connect_to_peer_live_test() {
+        // List of 9 peers:
+        // -> V4(66.108.98.51):34264
+        // -> V4(219.91.135.231):60709
+        // -> V4(216.36.15.101):51413
+        // -> V4(208.72.192.229):33566
+        // -> V4(84.17.53.169):51413
+        // -> V4(79.88.178.148):24711
+        // -> V4(74.58.115.36):49023
+        // -> V4(71.58.252.122):7881
+        // -> V4(68.168.178.21):51413
+        let ip = Ipv4Addr::new(66,108,98,51);
+        let ip = IpAddr::V4(ip);
+        let port = 34264;
+        connect_to_peer(ip, port);
+
     }
 }
