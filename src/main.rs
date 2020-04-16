@@ -16,6 +16,12 @@ struct AnnounceResponse {
     addresses: Vec<(u32, u16)>, // vector of tuples (addr, port) of peers
 }
 
+impl From<Vec<u8>> for AnnounceResponse {
+    fn from(buf: Vec<u8>) -> Self {
+        parse_announce_response(&buf)
+    }
+}
+
 fn print_byte_array(header: &str, bytes: &[u8]) {
     print!("{} => [", header);
     for (i, b) in bytes.iter().enumerate() {
@@ -238,7 +244,7 @@ fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
             if ip_addr == 0 {
                 break;
             }
-            
+
             addresses.push((ip_addr, port));
 
             // advance i
@@ -336,6 +342,14 @@ mod test {
         assert_eq!(result.action, 1);
         assert_eq!(result.leechers, 1);
         assert_eq!(result.seeders, 9);
+
+        // try using From
+        let result: AnnounceResponse = sample_announce_resp.into();
+        println!("result => {:?}", result);
+        assert_eq!(result.action, 1);
+        assert_eq!(result.leechers, 1);
+        assert_eq!(result.seeders, 9);
+
     }
 
     #[test]
