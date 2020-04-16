@@ -173,8 +173,8 @@ fn send_announce_req(
     let _num_bytes = sock.recv(&mut response_buf).unwrap();
     print_byte_array("announce resp", &response_buf);
 
-    // parse and return response
-    parse_announce_response(&response_buf.to_vec())
+    // transform into announce response
+    response_buf.to_vec().into()
 }
 
 fn get_u32_at(from: &[u8], index: usize) -> u32 {
