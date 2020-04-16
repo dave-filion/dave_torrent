@@ -5,6 +5,7 @@ use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket, IpAddr, TcpStream};
+use std::fmt::Error;
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -74,6 +75,8 @@ pub fn make_announce_packet(
     info_hash_bytes: &Vec<u8>,
     torrent_size: u64,
     port: u16,
+    peer_id: &[u8; 20],
+    tx_id: &[u8; 4],
 ) -> Vec<u8> {
     let mut buf = ByteBuffer::new();
 
@@ -84,17 +87,17 @@ pub fn make_announce_packet(
     buf.write_u32(1);
 
     // transaction_id (random 4 bytes)
-    let tx_id = rand::thread_rng().gen::<[u8; 4]>();
-    print_byte_array("random tx id", &tx_id);
-    buf.write_bytes(&tx_id);
+    // let tx_id = rand::thread_rng().gen::<[u8; 4]>();
+    // print_byte_array("random tx id", &tx_id);
+    buf.write_bytes(tx_id);
 
     // info hash (20 bytes)
     buf.write_bytes(&info_hash_bytes);
 
     // peer id (random 20 bytes)
-    let peer_id = rand::thread_rng().gen::<[u8; 20]>();
-    print_byte_array("random peer id", &peer_id);
-    buf.write_bytes(&peer_id);
+    // let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+    // print_byte_array("random peer id", &peer_id);
+    buf.write_bytes(peer_id);
 
     // downloaded (8 bytes, just zeros here)
     buf.write_bytes(&[0; 8]);
@@ -160,10 +163,12 @@ pub fn send_announce_req(
     info_hash_bytes: &Vec<u8>,
     torrent_size: u64,
     port: u16,
+    peer_id: &[u8; 20],
+    tx_id: &[u8; 4],
 ) -> AnnounceResponse {
     // now send announce message and return response
     let announce_packet =
-        make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port);
+        make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port, peer_id, tx_id);
     print_byte_array("Announce", &announce_packet);
 
     let _result = sock.send(&announce_packet);
@@ -273,18 +278,20 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 // peer_id: 20-byte string used as a unique ID for the client.
 //
 // In version 1.0 of the BitTorrent protocol, pstrlen = 19, and pstr = "BitTorrent protocol".
-pub fn connect_to_peer(ip: IpAddr, port: u16) {
+pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8;20]) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
     println!("connecting to remote socket at addr: {:?}", sock_addr);
     if let Ok(stream) = TcpStream::connect(sock_addr) {
         println!("connected to peer @ {:?}", sock_addr);
+        Result::Ok(stream)
     } else {
         println!("Failed to connect to peer");
+        Result::Err(Error)
     }
 }
 
 // makes a tcp handshake packet
-fn make_handshake(peer_id: [u8; 20]) -> Vec<u8> {
+fn make_handshake(peer_id: &[u8; 20]) -> Vec<u8> {
     let buf = ByteBuffer::new();
 
 
@@ -300,13 +307,15 @@ mod test {
     fn test_make_announce_packet() {
         let port = 6969;
         let torrent_size = 1; // 1 so its easy to see in byte form
+        let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+        let tx_id = [0x10, 0x20, 0x30, 0x40];
         let conn_id_bytes = [0x10, 0x38, 0x94, 0xC3, 0x73, 0x6B, 0x76, 0xB2].to_vec();
         let info_hash_bytes = [
             0xAA, 0x16, 0x30, 0x38, 0x78, 0x53, 0x79, 0x81, 0x90, 0x75, 0x43, 0x56, 0x11, 0x51,
             0x73, 0x33, 0x45, 0x89, 0x19, 0xCC,
         ]
             .to_vec();
-        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port);
+        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port, &peer_id, &tx_id);
 
         print_byte_array("result", &result);
         assert_eq!(result.len(), 98);
@@ -348,6 +357,14 @@ mod test {
 
         let result = get_u32_at(&buffer, 0);
         assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_make_handshake() {
+        // make random 20 byte peer id
+        let peer_id = rand::thread_rng().gen::<[u8;20]>();
+        let packet = make_handshake(&peer_id);
+        print_byte_array("handshake", &packet);
     }
 
     #[test]

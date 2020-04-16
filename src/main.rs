@@ -42,6 +42,12 @@ fn main() {
     let conn_id_bytes = send_connect_req(&sock);
     print_byte_array("conn id", &conn_id_bytes);
 
+    // generate persistent peer id and tx id
+    let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+    let tx_id = rand::thread_rng().gen::<[u8; 4]>();
+    print_byte_array("peer_id", &peer_id);
+    print_byte_array("tx_id", &tx_id);
+
     // send announce request
     let announce_resp = send_announce_req(
         &sock,
@@ -49,8 +55,13 @@ fn main() {
         &info_hash_bytes,
         torrent.length as u64,
         34264,
+        &peer_id,
+        &tx_id,
     );
     println!("Got announce result: {:?}", announce_resp);
+    // check that tx id is the same
+    let tx_id_int = BigEndian::read_u32(&tx_id);
+    println!("compare tx ids:\nsent: {:?}\nrecv: {:?}", tx_id_int, announce_resp.transaction_id);
 
     // get list of peers
     let peer_addrs = announce_resp.addresses;
@@ -60,8 +71,15 @@ fn main() {
         println!("-> {:?}:{:?}", addr, port);
     }
 
-    // try connecting to peers
+    // try connecting to all peers serially
     for (ip, port) in &peer_addrs {
-        connect_to_peer(ip.clone(), port.clone());
+        match connect_to_peer(ip.clone(), port.clone(), &peer_id) {
+            Ok(stream) => {
+                println!("got tcp stream");
+            },
+            Err(_) => {
+                println!("couldnt connect to {:?}", ip);
+            }
+        }
     }
 }
