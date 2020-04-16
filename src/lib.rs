@@ -1,11 +1,11 @@
 use rand::Rng;
-use std::io::{Cursor};
+use std::io::Cursor;
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use lava_torrent::torrent::v1::Torrent;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket, IpAddr, TcpStream};
 use std::fmt::Error;
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -167,12 +167,20 @@ pub fn send_announce_req(
     tx_id: &[u8; 4],
 ) -> AnnounceResponse {
     // now send announce message and return response
-    let announce_packet =
-        make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port, peer_id, tx_id);
+    let announce_packet = make_announce_packet(
+        &conn_id_bytes,
+        &info_hash_bytes,
+        torrent_size,
+        port,
+        peer_id,
+        tx_id,
+    );
     print_byte_array("Announce", &announce_packet);
 
     // check write timeout
-    let wtimeout = sock.read_timeout().expect("couldnt get read timeout of socket");
+    let wtimeout = sock
+        .read_timeout()
+        .expect("couldnt get read timeout of socket");
     if let Some(t) = wtimeout {
         println!("Socket write timeout is {:?}", t);
     } else {
@@ -182,7 +190,9 @@ pub fn send_announce_req(
     let _result = sock.send(&announce_packet);
 
     // check timeout
-    let timeout = sock.read_timeout().expect("couldnt get read timeout of socket");
+    let timeout = sock
+        .read_timeout()
+        .expect("couldnt get read timeout of socket");
     if let Some(t) = timeout {
         println!("Socket read timeout is {:?}", t);
     } else {
@@ -240,20 +250,20 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
             // get next 4 bytes, for addr
             let mut ip_addr = [0; 4];
             let mut j = 0;
-            for k in i..i+4 {
+            for k in i..i + 4 {
                 let b = resp.get(k).unwrap().clone();
                 ip_addr[j] = b;
-                j+=1;
+                j += 1;
             }
             // print_byte_array("ipaddr", &ip_addr);
 
             //get next 2 bytes for port
             let mut port = [0; 2];
             let mut j = 0;
-            for k in i+4..i+6 {
+            for k in i + 4..i + 6 {
                 let b = resp.get(k).unwrap().clone();
                 port[j] = b;
-                j+=1;
+                j += 1;
             }
             // print_byte_array("port", &port);
 
@@ -287,7 +297,7 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 
 // tcp connection to peer
 
-pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8;20]) -> Result<TcpStream, Error> {
+pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8; 20]) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
     println!("connecting to remote socket at addr: {:?}", sock_addr);
     if let Ok(stream) = TcpStream::connect(sock_addr) {
@@ -335,8 +345,6 @@ pub fn parse_handshake_response(buf: &Vec<u8>) {
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
     println!("len = {:?} (should be 19)", strlen as usize);
-
-
 }
 
 #[cfg(test)]
@@ -356,8 +364,15 @@ mod test {
             0xAA, 0x16, 0x30, 0x38, 0x78, 0x53, 0x79, 0x81, 0x90, 0x75, 0x43, 0x56, 0x11, 0x51,
             0x73, 0x33, 0x45, 0x89, 0x19, 0xCC,
         ]
-            .to_vec();
-        let result = make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port, &peer_id, &tx_id);
+        .to_vec();
+        let result = make_announce_packet(
+            &conn_id_bytes,
+            &info_hash_bytes,
+            torrent_size,
+            port,
+            &peer_id,
+            &tx_id,
+        );
 
         print_byte_array("result", &result);
         assert_eq!(result.len(), 98);
@@ -372,7 +387,8 @@ mod test {
             0x48, 0xC0, 0xE5, 0x83, 0x1E, 0x54, 0x11, 0x35, 0xA9, 0xC8, 0xD5, 0x4F, 0x58, 0xB2,
             0x94, 0x60, 0x87, 0x4A, 0x3A, 0x73, 0x24, 0xBF, 0x7F, 0x47, 0x3A, 0xFC, 0x7A, 0x1E,
             0xC9, 0x44, 0xA8, 0xB2, 0x15, 0xC8, 0xD5,
-        ].to_vec();
+        ]
+        .to_vec();
 
         let result = parse_announce_response(&sample_announce_resp);
         println!("result => {:?}", result);
@@ -404,20 +420,46 @@ mod test {
     #[test]
     fn test_make_handshake() {
         // make random 20 byte peer id and info hash
-        let peer_id = rand::thread_rng().gen::<[u8;20]>();
-        let info_hash = rand::thread_rng().gen::<[u8;20]>();
+        let peer_id = rand::thread_rng().gen::<[u8; 20]>();
+        let info_hash = rand::thread_rng().gen::<[u8; 20]>();
 
         let packet = make_handshake(&peer_id, &info_hash);
         print_byte_array("handshake", &packet);
         print_byte_array("peer_id", &peer_id);
-        let pstr = [0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C];
+        let pstr = [
+            0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F,
+            0x74, 0x6F, 0x63, 0x6F, 0x6C,
+        ];
         let s = from_utf8(&pstr).unwrap();
         println!("s => {}", s);
     }
 
     #[test]
     fn test_tcp_handshake_response() {
-        let response = [0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0].to_vec();
+        let response = [
+            0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72,
+            0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20,
+            0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49,
+            0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74,
+            0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0,
+        ]
+        .to_vec();
 
         parse_handshake_response(&response);
     }
@@ -434,10 +476,9 @@ mod test {
         // -> V4(74.58.115.36):49023
         // -> V4(71.58.252.122):7881
         // -> V4(68.168.178.21):51413
-        let ip = Ipv4Addr::new(66,108,98,51);
+        let ip = Ipv4Addr::new(66, 108, 98, 51);
         let ip = IpAddr::V4(ip);
         let port = 34264;
         // connect_to_peer(ip, port);
-
     }
 }
