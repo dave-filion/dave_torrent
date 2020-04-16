@@ -4,6 +4,7 @@ use std::io::{Write, Read};
 use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{UdpSocket};
+use std::time::Duration;
 
 use dave_torrent::*;
 
@@ -41,6 +42,10 @@ fn main() {
     let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
     println!("udp socket bound to local port: {:?}", sock);
 
+    // set rw timemout on sock
+    sock.set_write_timeout(Some(Duration::from_secs(5)));
+    sock.set_read_timeout(Some(Duration::from_secs(5)));
+
     // connect to remote addr
     let remote_addr = get_socket_addr(announce_url.as_str());
     sock.connect(remote_addr).expect("couldnt connect");
@@ -53,8 +58,8 @@ fn main() {
     // generate persistent peer id and tx id
     let peer_id = rand::thread_rng().gen::<[u8; 20]>();
     let tx_id = rand::thread_rng().gen::<[u8; 4]>();
-    print_byte_array("peer_id", &peer_id);
-    print_byte_array("tx_id", &tx_id);
+    //print_byte_array("peer_id", &peer_id);
+    //print_byte_array("tx_id", &tx_id);
 
     // send announce request
     let announce_resp = send_announce_req(

@@ -178,33 +178,8 @@ pub fn send_announce_req(
     );
     //print_byte_array("Announce", &announce_packet);
 
-    // set rw timemout
-    sock.set_write_timeout(Some(Duration::from_secs(5)));
-    sock.set_read_timeout(Some(Duration::from_secs(5)));
-
-
-    // check write timeout
-    let wtimeout = sock
-        .read_timeout()
-        .expect("couldnt get read timeout of socket");
-    if let Some(t) = wtimeout {
-        println!("Socket write timeout is {:?}", t);
-    } else {
-        println!("Socket has no write timeout, block indefinetly");
-    }
-
     let _result = sock.send(&announce_packet);
     println!("Sent announce packet... waiting for response...");
-
-    // check timeout
-    let timeout = sock
-        .read_timeout()
-        .expect("couldnt get read timeout of socket");
-    if let Some(t) = timeout {
-        println!("Socket read timeout is {:?}", t);
-    } else {
-        println!("Socket has no read timeout, block indefinetly");
-    }
 
     // listen for response TODO: need to implement timeout and retry
     let mut response_buf = [0; 128];
