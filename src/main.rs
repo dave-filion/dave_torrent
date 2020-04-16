@@ -2,9 +2,19 @@ use rand::Rng;
 use std::io::{Cursor, SeekFrom};
 
 use bytebuffer::ByteBuffer;
-use byteorder::{BigEndian, ReadBytesExt, ByteOrder};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+
+#[derive(Debug)]
+struct AnnounceResponse {
+    action: u32, // usually 1
+    transaction_id: u32,
+    interval: u32,
+    leechers: u32,
+    seeders: u32,
+    addresses: Vec<(u32, u16)>, // vector of tuples (addr, port) of peers
+}
 
 fn print_byte_array(header: &str, bytes: &[u8]) {
     print!("{} => [", header);
@@ -144,7 +154,7 @@ fn send_announce_req(
     info_hash_bytes: &Vec<u8>,
     torrent_size: u64,
     port: u16,
-) {
+) -> AnnounceResponse {
     // now send announce message and return response
     let announce_packet =
         make_announce_packet(&conn_id_bytes, &info_hash_bytes, torrent_size, port);
@@ -153,26 +163,27 @@ fn send_announce_req(
     let _result = sock.send(&announce_packet);
 
     // listen for response
-    let mut response_buf = [0; 512];
+    let mut response_buf = [0; 128];
     let _num_bytes = sock.recv(&mut response_buf).unwrap();
     print_byte_array("announce resp", &response_buf);
 
-    // do something with it
+    // parse and return response
+    parse_announce_response(&response_buf.to_vec())
 }
 
 fn get_u32_at(from: &[u8], index: usize) -> u32 {
     let mut buf = [0; 4];
     let mut j = 0;
-    for i in index..index+4 {
+    for i in index..index + 4 {
         let b = from[i];
         buf[j] = b;
-        j+= 1;
+        j += 1;
     }
     // conert from bytes to u32
     BigEndian::read_u32(&buf)
 }
 
-fn parse_announce_response(resp: &Vec<u8>) {
+fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
     // 0  - 4b - action (1)
     // 4  - 4b - transaction_id
     // 8  - 4b - interval
@@ -182,7 +193,7 @@ fn parse_announce_response(resp: &Vec<u8>) {
     // 24 + 6 * n - 2b - TCP port
 
     // go to byte 4 to get transaction id
-    let tx_id = get_u32_at(resp, 4);
+    let transaction_id = get_u32_at(resp, 4);
 
     let interval = get_u32_at(resp, 8);
 
@@ -190,8 +201,59 @@ fn parse_announce_response(resp: &Vec<u8>) {
 
     let seeders = get_u32_at(resp, 16);
 
+    // at offset 20, there are 6 byte units, first 4 are ip addr, 2 are port
+    let mut i = 20;
+    let mut addresses = Vec::new();
+    loop {
+        let maybe_result = resp.get(i);
+        if maybe_result.is_none() {
+            // end of list, break
+            break;
+        } else {
+            // get next 4 bytes, for addr
+            let mut ip_addr = [0; 4];
+            let mut j = 0;
+            for k in i..i+4 {
+                let b = resp.get(k).unwrap().clone();
+                ip_addr[j] = b;
+                j+=1;
+            }
+            // print_byte_array("ipaddr", &ip_addr);
 
+            //get next 2 bytes for port
+            let mut port = [0; 2];
+            let mut j = 0;
+            for k in i+4..i+6 {
+                let b = resp.get(k).unwrap().clone();
+                port[j] = b;
+                j+=1;
+            }
+            // print_byte_array("port", &port);
 
+            // transform from bytes to ints
+            let ip_addr = BigEndian::read_u32(&ip_addr);
+            let port = BigEndian::read_u16(&port);
+
+            // if ip_addr is 0, we reached the end, break\
+            if ip_addr == 0 {
+                break;
+            }
+            
+            addresses.push((ip_addr, port));
+
+            // advance i
+            i += 6;
+        }
+    }
+
+    AnnounceResponse {
+        action: 1, // always 1
+        transaction_id,
+        interval,
+        leechers,
+        seeders,
+        addresses,
+    }
 }
 
 fn main() {
@@ -227,13 +289,15 @@ fn main() {
     print_byte_array("conn id", &conn_id_bytes);
 
     // send announce request
-    send_announce_req(
+    let result = send_announce_req(
         &sock,
         &conn_id_bytes,
         &info_hash_bytes,
         torrent.length as u64,
         34264,
     );
+
+    println!("Got announce result: {:?}", result);
 }
 
 #[cfg(test)]
@@ -256,20 +320,31 @@ mod test {
         assert_eq!(result.len(), 98);
     }
 
-#[test]
-fn test_announce() {
-    let sample_announce_resp = [0x0, 0x0, 0x0, 0x1, 0x65, 0x48, 0x92, 0x2D, 0x0, 0x0, 0x6, 0xB8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x9, 0x42, 0x6C, 0x62, 0x33, 0x85, 0xD8, 0xDB, 0x5B, 0x8B, 0xEB, 0xE8, 0x74, 0xDB, 0x5B, 0x8B, 0xEB, 0xC8, 0x54, 0xD8, 0x24, 0xF, 0x65, 0xC8, 0xD5, 0xD0, 0x48, 0xC0, 0xE5, 0x83, 0x1E, 0x54, 0x11, 0x35, 0xA9, 0xC8, 0xD5, 0x4F, 0x58, 0xB2, 0x94, 0x60, 0x87, 0x4A, 0x3A, 0x73, 0x24, 0xBF, 0x7F, 0x47, 0x3A, 0xFC, 0x7A, 0x1E, 0xC9, 0x44, 0xA8, 0xB2, 0x15, 0xC8, 0xD5];
+    #[test]
+    fn test_parse_announce_response() {
+        let sample_announce_resp = [
+            0x0, 0x0, 0x0, 0x1, 0x65, 0x48, 0x92, 0x2D, 0x0, 0x0, 0x6, 0xB8, 0x0, 0x0, 0x0, 0x1,
+            0x0, 0x0, 0x0, 0x9, 0x42, 0x6C, 0x62, 0x33, 0x85, 0xD8, 0xDB, 0x5B, 0x8B, 0xEB, 0xE8,
+            0x74, 0xDB, 0x5B, 0x8B, 0xEB, 0xC8, 0x54, 0xD8, 0x24, 0xF, 0x65, 0xC8, 0xD5, 0xD0,
+            0x48, 0xC0, 0xE5, 0x83, 0x1E, 0x54, 0x11, 0x35, 0xA9, 0xC8, 0xD5, 0x4F, 0x58, 0xB2,
+            0x94, 0x60, 0x87, 0x4A, 0x3A, 0x73, 0x24, 0xBF, 0x7F, 0x47, 0x3A, 0xFC, 0x7A, 0x1E,
+            0xC9, 0x44, 0xA8, 0xB2, 0x15, 0xC8, 0xD5,
+        ].to_vec();
 
-}
+        let result = parse_announce_response(&sample_announce_resp);
+        println!("result => {:?}", result);
+        assert_eq!(result.action, 1);
+        assert_eq!(result.leechers, 1);
+        assert_eq!(result.seeders, 9);
+    }
 
-#[test]
-fn test_get_u32_at_position() {
-    let buffer = [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0];
-    let result = get_u32_at(&buffer, 4);
-    assert_eq!(result, 2);
+    #[test]
+    fn test_get_u32_at_position() {
+        let buffer = [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0];
+        let result = get_u32_at(&buffer, 4);
+        assert_eq!(result, 2);
 
-    let result = get_u32_at(&buffer, 0);
-    assert_eq!(result, 0);
-}
-
+        let result = get_u32_at(&buffer, 0);
+        assert_eq!(result, 0);
+    }
 }
