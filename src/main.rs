@@ -1,10 +1,9 @@
 use rand::Rng;
-use std::io::{Cursor, Write, Read};
+use std::io::{Write, Read};
 
-use bytebuffer::ByteBuffer;
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket, TcpStream, IpAddr};
+use std::net::{UdpSocket};
 
 use dave_torrent::*;
 

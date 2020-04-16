@@ -3,7 +3,6 @@ use std::io::Cursor;
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use lava_torrent::torrent::v1::Torrent;
 use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 
@@ -296,8 +295,7 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 }
 
 // tcp connection to peer
-
-pub fn connect_to_peer(ip: IpAddr, port: u16, peer_id: &[u8; 20]) -> Result<TcpStream, Error> {
+pub fn connect_to_peer(ip: IpAddr, port: u16, _peer_id: &[u8; 20]) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
     println!("connecting to remote socket at addr: {:?}", sock_addr);
     if let Ok(stream) = TcpStream::connect(sock_addr) {
@@ -344,7 +342,7 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
 pub fn parse_handshake_response(buf: &Vec<u8>) {
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
-    println!("len = {:?} (should be 19)", strlen as usize);
+    println!("len = {:?} (should be 19)", strlen);
 }
 
 #[cfg(test)]
