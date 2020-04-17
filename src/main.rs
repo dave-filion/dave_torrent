@@ -9,6 +9,17 @@ use std::time::Duration;
 use dave_torrent::*;
 
 
+fn get_torrent_size(t : &Torrent) -> i64 {
+    // calculate how many files and total torrent size
+        if t.files.is_none() {
+            // sum all file sizes
+            t.files.as_ref().unwrap().iter().map(|f| f.length).sum()
+        } else {
+            // report length
+            t.length
+        }
+}
+
 
 fn main() {
     // load torrent file data
@@ -24,9 +35,10 @@ fn main() {
         info_hash_array[i] = info_hash_bytes.get(i).unwrap().clone();
     }
 
-    let total_size = torrent.length;
+    let total_size = get_torrent_size(&torrent);
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.expect("Need announce");
+
 
     println!("TORRENT INFO");
     println!("------------------------------------");
@@ -42,7 +54,7 @@ fn main() {
     let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
     println!("udp socket bound to local port: {:?}", sock);
 
-    // set rw timemout on sock
+    // set rw timemout on sock (5 sec timeout)
     sock.set_write_timeout(Some(Duration::from_secs(5)));
     sock.set_read_timeout(Some(Duration::from_secs(5)));
 
@@ -115,6 +127,26 @@ fn main() {
             Err(_) => {
                 println!("couldnt connect to {:?}", ip);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_get_torrent_size() {
+        // load torrent file data
+        let filepath = "tears-of-steel.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+        let size = get_torrent_size(&torrent);
+        println!("size: {:?} bytes",size);
+        println!("reported length: {:?}", torrent.length);
+        assert_eq!(size, 571426507);
+        println!("{} kb, {} mb, {} gb", size / 1024, (size/1024)/1024, ((size/1024)/1024)/1024);
+        for f in torrent.files.unwrap() {
+            println!("file={:?}, size={:?} bytes", f.path, f.length);
         }
     }
 }
