@@ -139,13 +139,24 @@ fn main() {
                         // handshake is fine, start listening for have message
                         println!("Handshake to {:?}:{} SUCCESS, listening for messages", ip, port);
 
-                        let mut buf = [0; 128];
-                        let read_result = stream.read(&mut buf);
-                        if let Ok(bytes_read) = read_result {
-                            println!("Read {} byte message from {:?}:{}", bytes_read, ip, port);
-                            print_byte_array("peer msg", &buf);
-                        } else {
-                            println!("Failed to read more");
+                        // loop TODO this doesnt work, just returns 0 bytes read over and over
+                        loop {
+                            let mut buf = [0; 128];
+                            let read_result = stream.read(&mut buf);
+                            if let Ok(bytes_read) = read_result {
+                                println!("Read {} byte message from {:?}:{}", bytes_read, ip, port);
+                                print_byte_array("peer msg", &buf);
+
+                                // get len of message (first 4 bytes)
+                                let (len_bytes, _) = get_n_bytes_at(&buf.to_vec(), 0, 4);
+                                let len = BigEndian::read_u32(&len_bytes);
+
+                                println!("total msg len is : {}", len);
+
+                            } else {
+                                println!("Failed to read more");
+                                break;
+                            }
                         }
 
                     } else {
