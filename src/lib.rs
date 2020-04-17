@@ -1,12 +1,12 @@
-use rand::{Rng, AsByteSliceMut};
-use std::io::Cursor;
+use rand::{AsByteSliceMut, Rng};
+use std::io::{Cursor, Read, Write};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::time::Duration;
 use std::str::from_utf8;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -284,7 +284,9 @@ pub fn connect_to_peer(ip: IpAddr, port: u16) -> Result<TcpStream, Error> {
     // 5 sec connection timeout
     if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(5)) {
         // set stream to blocking
-        stream.set_nonblocking(false).expect("cant set stream to blocking");
+        stream
+            .set_nonblocking(false)
+            .expect("cant set stream to blocking");
         Result::Ok(stream)
     } else {
         Result::Err(Error)
@@ -327,7 +329,7 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
 pub fn get_n_bytes_at(buf: &Vec<u8>, start_i: usize, n_bytes: usize) -> (Vec<u8>, usize) {
     let mut v = Vec::new();
     let mut j = start_i;
-    for i in start_i..start_i+n_bytes {
+    for i in start_i..start_i + n_bytes {
         let byte = buf.get(i).unwrap();
         v.push(byte.clone());
         j = i;
@@ -339,11 +341,10 @@ pub fn get_n_bytes_at(buf: &Vec<u8>, start_i: usize, n_bytes: usize) -> (Vec<u8>
 pub struct HandshakeResponse {
     pub protocol: String,
     pub info_hash: Vec<u8>, //20 bytes
-    pub peer_id: Vec<u8>, // 20 bytes
+    pub peer_id: Vec<u8>,   // 20 bytes
 }
 
 pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
-
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
 
@@ -378,14 +379,14 @@ pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
 // port: <len=0003><id=9><listen-port>
 pub enum PeerMessage {
     KeepAlive,
-    Choke(usize), // id = 0
-    Unchoke(usize), // id = 1
-    Interested(usize), // id = 2
-    NotInterested(usize), // id = 3
-    Have(usize, u32), // id = 4, piece_index=4bytes
+    Choke(usize),             // id = 0
+    Unchoke(usize),           // id = 1
+    Interested(usize),        // id = 2
+    NotInterested(usize),     // id = 3
+    Have(usize, u32),         // id = 4, piece_index=4bytes
     Bitfield(usize, [u8; 4]), // id = 5, bitfield=4bytes
     Request(usize, u32, u32), // id = 6, index=4, begin=4, length=4
-    Piece(usize), // TODO should have more
+    Piece(usize),             // TODO should have more
     Cancel(usize),
     Port(usize),
 }
@@ -442,6 +443,103 @@ fn make_have_msg(piece_index: u32) -> Vec<u8> {
     buf.to_bytes()
 }
 
+pub struct Peer {
+    choked: bool,
+    stream: TcpStream,
+    ip: IpAddr,
+    port: u16,
+    info_hash: [u8; 20],
+    peer_id: [u8; 20],
+}
+
+impl Peer {
+    // Makes new peer and connects
+    pub fn new(
+        ip: IpAddr,
+        port: u16,
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
+    ) -> Result<Self, Error> {
+        let sock_addr = SocketAddr::new(ip, port);
+        // 5 sec connection timeout
+        if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(5)) {
+            // set stream to blocking
+            stream
+                .set_nonblocking(false)
+                .expect("cant set stream to blocking");
+            Result::Ok(Peer {
+                choked: false,
+                stream,
+                ip,
+                port,
+                info_hash,
+                peer_id,
+            })
+        } else {
+            println!("Couldnt connect to peer: {:?}:{}", ip, port);
+            Result::Err(Error)
+        }
+    }
+
+    pub fn perform_handshake(&mut self) -> Result<(), Error> {
+        println!("Peer at {:?} performing handshake...", self.ip);
+        let handshake = make_handshake(&self.peer_id, &self.info_hash);
+
+        // write handshake to stream
+        let write_result = self.stream.write_all(&handshake);
+        if let Ok(bytes_wrote) = write_result {
+            println!("Waiting for response from {:?}:{}", self.ip, self.port);
+            // set read timeout
+            self.stream.set_read_timeout(Some(Duration::from_secs(5))).expect("Couldnt set read timeout");
+            let mut hs_resp = [0; 128]; // needs to be more then 64
+            let read_result = self.stream.read(&mut hs_resp);
+            if let Ok(bytes_read) = read_result {
+                println!(
+                    "Recieved {} byte handshake response from {:?}:{}",
+                    bytes_read, self.ip, self.port
+                );
+                // parse response
+                // print_byte_array("handshake response", &resp_buf);
+                let handshake_response = parse_handshake_response(&hs_resp.to_vec());
+                // verify response is accurate
+                println!("verifying handshake from {:?}:{}", self.ip, self.port);
+                if handshake_response.protocol != "BitTorrent protocol" {
+                    println!("Protocol incorrect: {}", handshake_response.protocol);
+                    return Result::Err(Error);
+                } else {
+                    println!("...protocol OK")
+                }
+
+                if handshake_response.info_hash != self.info_hash {
+                    println!("Info hashes dont match... going to next peer");
+                    return Result::Err(Error);
+                } else {
+                    println!("...info hash OK");
+                }
+
+                // handshake is fine, start listening for have message
+                println!(
+                    "Handshake to {:?}:{} SUCCESS, listening for messages",
+                    self.ip, self.port
+                );
+
+                Result::Ok(())
+            } else {
+                println!(
+                    "Reading handshake response from stream failed for {:?}:{}",
+                    self.ip, self.port
+                );
+                Result::Err(Error)
+            }
+        } else {
+            println!(
+                "Writing handshake to stream failed for {:?}:{}",
+                self.ip, self.port
+            );
+            Result::Err(Error)
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -554,14 +652,15 @@ mod test {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0,
-        ].to_vec();
+        ]
+        .to_vec();
 
         let (result, new_i) = get_n_bytes_at(&buf, 2, 7);
         print_byte_array("result", &result);
         assert_eq!(result.len(), 7);
         assert_eq!(result.get(0).unwrap(), &0x69);
         assert_eq!(result.get(6).unwrap(), &0x65);
-        println!("new i = {}", new_i    );
+        println!("new i = {}", new_i);
         assert_eq!(new_i, 8);
     }
 
@@ -595,8 +694,22 @@ mod test {
         let response = parse_handshake_response(&response);
         println!("response : {:?}", response);
         assert_eq!(response.protocol, "BitTorrent protocol".to_string());
-        assert_eq!(response.info_hash, [0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC].to_vec());
-        assert_eq!(response.peer_id, [0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F].to_vec());
+        assert_eq!(
+            response.info_hash,
+            [
+                0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB,
+                0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC
+            ]
+            .to_vec()
+        );
+        assert_eq!(
+            response.peer_id,
+            [
+                0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D,
+                0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F
+            ]
+            .to_vec()
+        );
     }
 
     #[test]
@@ -626,7 +739,6 @@ mod test {
         assert_eq!(msg.get(4).unwrap(), &0u8);
     }
 
-
     #[test]
     fn test_make_unchoke_msg() {
         let msg = make_unchoke_msg();
@@ -649,7 +761,13 @@ mod test {
 
     #[test]
     fn parse_peer_msg() {
-        let resp = [0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x71, 0x64, 0x36, 0x37, 0x6F, 0x67, 0x6D, 0x6D].to_vec();
-
+        let resp = [
+            0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72,
+            0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20,
+            0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49,
+            0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x71,
+            0x64, 0x36, 0x37, 0x6F, 0x67, 0x6D, 0x6D,
+        ]
+        .to_vec();
     }
 }

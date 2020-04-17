@@ -1,25 +1,23 @@
 use rand::Rng;
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
-use std::net::{UdpSocket};
+use std::net::UdpSocket;
 use std::time::Duration;
 
 use dave_torrent::*;
 
-
-fn get_torrent_size(t : &Torrent) -> i64 {
+fn get_torrent_size(t: &Torrent) -> i64 {
     // calculate how many files and total torrent size
-        if t.files.is_none() {
-            // sum all file sizes
-            t.files.as_ref().unwrap().iter().map(|f| f.length).sum()
-        } else {
-            // report length
-            t.length
-        }
+    if t.files.is_none() {
+        // sum all file sizes
+        t.files.as_ref().unwrap().iter().map(|f| f.length).sum()
+    } else {
+        // report length
+        t.length
+    }
 }
-
 
 fn main() {
     // load torrent file data
@@ -38,7 +36,6 @@ fn main() {
     let total_size = get_torrent_size(&torrent);
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.expect("Need announce");
-
 
     println!("TORRENT INFO");
     println!("------------------------------------");
@@ -83,12 +80,15 @@ fn main() {
         torrent.length as u64,
         34264,
         &peer_id,
-        &tx_id
+        &tx_id,
     );
     println!("Got announce result: {:?}", announce_resp);
     // check that tx id is the same
     let tx_id_int = BigEndian::read_u32(&tx_id);
-    println!("compare tx ids:\nsent: {:?}\nrecv: {:?}", tx_id_int, announce_resp.transaction_id);
+    println!(
+        "compare tx ids:\nsent: {:?}\nrecv: {:?}",
+        tx_id_int, announce_resp.transaction_id
+    );
 
     // get list of peers
     let peer_addrs = announce_resp.addresses;
@@ -103,87 +103,29 @@ fn main() {
     for (ip, port) in &peer_addrs {
         println!("\n---------------------\n");
         println!("Connecting to peer: {:?}:{}", ip, port);
-        match connect_to_peer(ip.clone(), port.clone()) {
-            Ok(mut stream) => {
-                // send handshake packet
-                let handshake = make_handshake(&peer_id, &info_hash_array);
-                // print_byte_array("tcp handshake", &handshake);
+        let peer_result = Peer::new(
+            ip.clone(),
+            port.clone(),
+            info_hash_array.clone(),
+            peer_id.clone(),
+        );
 
-                println!("Connected to {:?}:{}, writing handshake to stream...", ip, port);
-                // write handshake to stream
-                let write_result = stream.write(&handshake);
-                if let Ok(bytes_wrote) = write_result {
-
-                    println!("Waiting for response from {:?}:{}", ip, port);
-                    // listen for response
-                    let mut hs_resp = [0; 128]; // needs to be more then 64
-                    let read_result = stream.read(&mut hs_resp);
-                    if let Ok(bytes_read) = read_result {
-                        println!("Recieved {} byte handshake response from {:?}:{}", bytes_read, ip, port);
-                        // parse response
-                        // print_byte_array("handshake response", &resp_buf);
-                        let handshake_response = parse_handshake_response(&hs_resp.to_vec());
-                        // verify response is accurate
-                        println!("verifying handshake from {:?}:{}", ip, port);
-                        if handshake_response.protocol != "BitTorrent protocol" {
-                            println!("Protocol incorrect: {}", handshake_response.protocol);
-                            // release connection
-                        } else {
-                            println!("...protocol OK")
-                        }
-
-                        if handshake_response.info_hash != info_hash_bytes {
-                            println!("Info hashes dont match... going to next peer");
-                            continue;
-                        } else {
-                            println!("...info hash OK");
-                        }
-
-                        // handshake is fine, start listening for have message
-                        println!("Handshake to {:?}:{} SUCCESS, listening for messages", ip, port);
-
-                        // send unchoke message
-                        println!("sending unchoke message to {:?}:{}", ip, port);
-                        let unchoke = make_unchoke_msg();
-                        stream.write(&unchoke);
-
-                        // send interested message
-                        println!("sending interested message to {:?}:{}", ip, port);
-                        let interested = make_interested_msg();
-                        stream.write(&interested);
-
-                        // loop TODO this doesnt work, just returns 0 bytes read over and over
-                        loop {
-                            println!("waiting to recv messages from {:?}:{}", ip, port);
-                            let mut buf = [0; 128];
-                            let read_result = stream.read(&mut buf);
-                            if let Ok(bytes_read) = read_result {
-                                println!("Read {} byte message from {:?}:{}", bytes_read, ip, port);
-                                print_byte_array("peer msg", &buf);
-
-                                // get len of message (first 4 bytes)
-                                let (len_bytes, _) = get_n_bytes_at(&buf.to_vec(), 0, 4);
-                                let len = BigEndian::read_u32(&len_bytes);
-
-                                println!("total msg len is : {}", len);
-
-                            } else {
-                                println!("Failed to read more");
-                                break;
-                            }
-                        }
-
-                    } else {
-                        println!("Reading handshake response from stream failed for {:?}:{}", ip, port);
-                    }
-                } else {
-                    println!("Writing handshake to stream failed for {:?}:{}", ip, port);
-                }
-            },
-            Err(_) => {
-                println!("couldnt connect to {:?}", ip);
-            }
+        if let Err(_e) = peer_result {
+            println!("Error connecting to peer, trying next peer");
+            continue
         }
+
+        let mut peer = peer_result.unwrap();
+
+        let handshake_result = peer.perform_handshake();
+        if let Err(_e) = handshake_result {
+            println!("Error performing handshake, trying next peer");
+            continue
+        }
+
+        println!("peer good to go");
+
+
     }
 }
 
@@ -198,72 +140,76 @@ mod test {
         let filepath = "tears-of-steel.torrent";
         let torrent = Torrent::read_from_file(filepath).unwrap();
         let size = get_torrent_size(&torrent);
-        println!("size: {:?} bytes",size);
+        println!("size: {:?} bytes", size);
         println!("reported length: {:?}", torrent.length);
         assert_eq!(size, 571426507);
-        println!("{} kb, {} mb, {} gb", size / 1024, (size/1024)/1024, ((size/1024)/1024)/1024);
+        println!(
+            "{} kb, {} mb, {} gb",
+            size / 1024,
+            (size / 1024) / 1024,
+            ((size / 1024) / 1024) / 1024
+        );
         for f in torrent.files.unwrap() {
             println!("file={:?}, size={:?} bytes", f.path, f.length);
         }
     }
 
-    #[test]
-    fn test_connect() {
-        let ip = "216.36.15.101:51413";
-        let info_hash = [0x20, 0x9c, 0x82, 0x26, 0xb2, 0x99, 0xb3, 0x08, 0xbe, 0xaf, 0x2b, 0x9c, 0xd3, 0xfb, 0x49, 0x21, 0x2d, 0xbd, 0x13, 0xec];
-        let peer_id = [0xF4, 0x8B, 0x39, 0xC9, 0x3F, 0x7A, 0xBE, 0xA3, 0xFD, 0x84, 0x96, 0xBC, 0xE, 0xB1, 0xF0, 0xFD, 0x7C, 0x3D, 0x8E, 0x42];
-
-        // make connection
-        let mut stream = TcpStream::connect(ip).expect("connect");
-
-        // send handshake
-        let handshake = make_handshake(&peer_id, &info_hash);
-        stream.write(&handshake);
-        println!("wrote handshake");
-
-        // listen for resp
-        let mut buf = [0; 128];
-        let read_res = stream.read(&mut buf);
-        if let Ok(bytes_read) = read_res {
-            println!("got result of {} bytes", bytes_read);
-        } else {
-            println!("failed to read response");
-            return;
-        }
-
-        let hs_resp = parse_handshake_response(&buf.to_vec());
-        println!("HS response:");
-        print_byte_array("infohash", &hs_resp.info_hash);
-        print_byte_array("peerid", &hs_resp.peer_id);
-
-        // verify handshake is accurate
-        println!("verifying handshake from {:?}", ip);
-        if hs_resp.protocol != "BitTorrent protocol" {
-            println!("Protocol incorrect: {}... breaking", hs_resp.protocol);
-            return;
-        } else {
-            println!("...protocol OK")
-        }
-
-        if hs_resp.info_hash != info_hash.to_vec() {
-            println!("Info hashes dont match... breaking");
-            return;
-        } else {
-            println!("...info hash OK");
-        }
-
-        println!("Handshake looks good");
-
-        // listen for messages, blocking
-        stream.set_nonblocking(false).expect("couldnt set to blocking");
-
-        for i in 0..10 {
-            let mut msg_buf = [0; 32];
-            let read_result = stream.read(&mut msg_buf).expect("Read failure");
-            println!("msg recv of size: {}", read_result);
-            print_byte_array("msg", &msg_buf);
-
-        }
-
-    }
+    // #[test]
+    // fn test_connect() {
+    //     let ip = "216.36.15.101:51413";
+    //     let info_hash = [0x20, 0x9c, 0x82, 0x26, 0xb2, 0x99, 0xb3, 0x08, 0xbe, 0xaf, 0x2b, 0x9c, 0xd3, 0xfb, 0x49, 0x21, 0x2d, 0xbd, 0x13, 0xec];
+    //     let peer_id = [0xF4, 0x8B, 0x39, 0xC9, 0x3F, 0x7A, 0xBE, 0xA3, 0xFD, 0x84, 0x96, 0xBC, 0xE, 0xB1, 0xF0, 0xFD, 0x7C, 0x3D, 0x8E, 0x42];
+    //
+    //     // make connection
+    //     let mut stream = TcpStream::connect(ip).expect("connect");
+    //
+    //     // send handshake
+    //     let handshake = make_handshake(&peer_id, &info_hash);
+    //     stream.write(&handshake);
+    //     println!("wrote handshake");
+    //
+    //     // listen for resp
+    //     let mut buf = [0; 128];
+    //     let read_res = stream.read(&mut buf);
+    //     if let Ok(bytes_read) = read_res {
+    //         println!("got result of {} bytes", bytes_read);
+    //     } else {
+    //         println!("failed to read response");
+    //         return;
+    //     }
+    //
+    //     let hs_resp = parse_handshake_response(&buf.to_vec());
+    //     println!("HS response:");
+    //     print_byte_array("infohash", &hs_resp.info_hash);
+    //     print_byte_array("peerid", &hs_resp.peer_id);
+    //
+    //     // verify handshake is accurate
+    //     println!("verifying handshake from {:?}", ip);
+    //     if hs_resp.protocol != "BitTorrent protocol" {
+    //         println!("Protocol incorrect: {}... breaking", hs_resp.protocol);
+    //         return;
+    //     } else {
+    //         println!("...protocol OK")
+    //     }
+    //
+    //     if hs_resp.info_hash != info_hash.to_vec() {
+    //         println!("Info hashes dont match... breaking");
+    //         return;
+    //     } else {
+    //         println!("...info hash OK");
+    //     }
+    //
+    //     println!("Handshake looks good");
+    //
+    //     // listen for messages, blocking
+    //     stream.set_nonblocking(false).expect("couldnt set to blocking");
+    //
+    //     for i in 0..10 {
+    //         let mut msg_buf = [0; 32];
+    //         let read_result = stream.read(&mut msg_buf).expect("Read failure");
+    //         println!("msg recv of size: {}", read_result);
+    //         print_byte_array("msg", &msg_buf);
+    //
+    //     }
+    // }
 }
