@@ -98,30 +98,65 @@ fn main() {
 
     // try connecting to all peers serially
     for (ip, port) in &peer_addrs {
+        println!("Connecting to peer: {:?}:{}", ip, port);
         match connect_to_peer(ip.clone(), port.clone(), &peer_id) {
             Ok(mut stream) => {
-                println!("got tcp stream");
                 // send handshake packet
                 let handshake = make_handshake(&peer_id, &info_hash_array);
-                print_byte_array("tcp handshake", &handshake);
+                // print_byte_array("tcp handshake", &handshake);
 
+                println!("Connected to {:?}:{}, writing handshake to stream...", ip, port);
                 // write handshake to stream
                 let write_result = stream.write(&handshake);
                 if let Ok(bytes_wrote) = write_result {
-                    println!("wrote {} bytes for tcp handshake", bytes_wrote);
 
+                    println!("Waiting for response from {:?}:{}", ip, port);
                     // listen for response
-                    let mut resp_buf = [0; 512];
+                    let mut resp_buf = [0; 64];
                     let read_result = stream.read(&mut resp_buf);
                     if let Ok(bytes_read) = read_result {
-                        println!("Read {} bytes from tcp stream", bytes_read);
+                        println!("Recieved {} byte handshake response from {:?}:{}", bytes_read, ip, port);
                         // parse response
-                        print_byte_array("handshake response", &resp_buf);
+                        // print_byte_array("handshake response", &resp_buf);
+                        let handshake_response = parse_handshake_response(&resp_buf.to_vec());
+                        // verify response is accurate
+                        println!("verifying handshake from {:?}:{}", ip, port);
+                        if handshake_response.protocol != "BitTorrent protocol" {
+                            println!("Protocol incorrect: {}", handshake_response.protocol);
+                            // release connection
+                        } else {
+                            println!("...protocol OK")
+                        }
+
+                        if handshake_response.info_hash != info_hash_bytes {
+                            println!("Info hashes dont match...");
+                        } else {
+                            println!("...info hash OK");
+                        }
+
+                        if handshake_response.peer_id != peer_id.to_vec() {
+                            println!("Peer id doesnt match...");
+                        } else {
+                            println!("...peer id OK");
+                        }
+
+                        // handshake is fine, start listening for have message
+                        println!("Handshake to {:?}:{} SUCCESS, listening for messages", ip, port);
+
+                        let mut buf = [0; 128];
+                        let read_result = stream.read(&mut buf);
+                        if let Ok(bytes_read) = read_result {
+                            println!("Read {} byte message from {:?}:{}", bytes_read, ip, port);
+                            print_byte_array("peer msg", &buf);
+                        } else {
+                            println!("Failed to read more");
+                        }
+
                     } else {
-                        println!("Handshake read error");
+                        println!("Reading handshake response from stream failed for {:?}:{}", ip, port);
                     }
                 } else {
-                    println!("Handshake failed");
+                    println!("Writing handshake to stream failed for {:?}:{}", ip, port);
                 }
             },
             Err(_) => {
