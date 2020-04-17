@@ -41,6 +41,7 @@ fn main() {
     println!("------------------------------------");
     println!("Total size = {} bytes", total_size);
     println!("Piece size = {} bytes", piece_size);
+    println!("Piece number = {}", torrent.pieces.len());
     println!("info hash = {}", info_hash);
     println!("announce url: {}", announce_url);
     println!("------------------------------------\n");

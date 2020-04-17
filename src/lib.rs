@@ -8,6 +8,8 @@ use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::str::from_utf8;
 use std::time::Duration;
 
+mod download;
+
 #[derive(Debug)]
 pub struct AnnounceResponse {
     pub action: u32, // usually 1
@@ -693,11 +695,8 @@ pub fn parse_peer_msg(buf: &[u8]) {
     // get size
     let msg_size = get_u32_at(buf, 0);
 
-    println!("msg size = {}", msg_size);
-
     // get id
     let id = buf[4];
-    println!("msg id = {}", id);
     // keep-alive: <len=0000>
 // choke: <len=0001><id=0>
 // unchoke: <len=0001><id=1>
