@@ -24,6 +24,22 @@ impl From<Vec<u8>> for AnnounceResponse {
     }
 }
 
+pub fn print_byte_array_len(header: &str, bytes: &[u8], until: usize) {
+    print!("{} => [", header);
+    for (i, b) in bytes.iter().enumerate() {
+        if i == until {
+            break;
+        }
+
+        if i == 0 {
+            print!("0x{:X?}", b);
+        } else {
+            print!(", 0x{:X?}", b);
+        }
+    }
+    println!("]");
+}
+
 pub fn print_byte_array(header: &str, bytes: &[u8]) {
     print!("{} => [", header);
     for (i, b) in bytes.iter().enumerate() {
@@ -183,7 +199,7 @@ pub fn send_announce_req(
     println!("Sent announce packet... waiting for response...");
 
     // listen for response TODO: need to implement timeout and retry
-    let mut response_buf = [0; 128];
+    let mut response_buf = [0; 512];
     let _num_bytes = sock.recv(&mut response_buf).unwrap();
     //print_byte_array("announce resp", &response_buf);
 
@@ -462,7 +478,7 @@ impl Peer {
     ) -> Result<Self, Error> {
         let sock_addr = SocketAddr::new(ip, port);
         // 5 sec connection timeout
-        if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(5)) {
+        if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(2)) {
             // set stream to blocking
             stream
                 .set_nonblocking(false)
@@ -479,6 +495,91 @@ impl Peer {
             println!("Couldnt connect to peer: {:?}:{}", ip, port);
             Result::Err(Error)
         }
+    }
+
+    // for some reason after handshake theres a bunch of nonesense sent, read it out of queue
+    pub fn recv_garbage(&mut self) {
+        println!("reading garbage from peer");
+        let mut buf = [0; 512];
+        let read_result = self.stream.read(&mut buf);
+        match read_result {
+            Ok(bytes_read) => {
+                println!("Read {} bytes of crap from peer. looks like...", bytes_read);
+                print_byte_array_len("crap", &buf, bytes_read);
+            },
+            Err(e) => {
+                println!("error reading crap from peer: {:?}", e);
+            }
+        }
+    }
+
+    pub fn maybe_revc_bitfield(&mut self) {
+        println!("reading for 5 sec to see if bitfield recv");
+        self.stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+
+        // read 4 byte size
+        let mut buf = [0; 4];
+        let read_result = self.stream.read(&mut buf);
+        match read_result {
+            Ok(bytes_read) => {
+                println!("read bytes: {}", bytes_read);
+                let msg_size = BigEndian::read_u32(&buf);
+
+                // for some reason, getting huge numbers here, just skip
+                if msg_size > 512 {
+                    println!("Got message size of {}, way too big, skipping", msg_size);
+                    return
+                }
+
+                println!("msg size is {} bytes, reading...", msg_size);
+
+                let mut buf = Vec::with_capacity(msg_size as usize);
+                let read_result = self.stream.read(&mut buf);
+
+                match read_result {
+                    Ok(bytes_read) => {
+                        println!("read msg bytes: {}", bytes_read);
+                        print_byte_array("peer msg", &buf);
+                        // return data here
+                    },
+                    Err(e) => {
+                        println!("Error reading remaineder of message: {:?}", e);
+                        // return none here
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Error reading message: {:?}", e);
+                // return none here
+            }
+        }
+    }
+
+    pub fn send_interested(&mut self) {
+        println!("Sending interested message to peer");
+        let msg = make_interested_msg();
+        self.stream.write_all(&msg).unwrap();
+    }
+
+    pub fn recv_choke(&mut self) {
+        // wait 5 secs for choke msg
+        self.stream.set_read_timeout(Some(Duration::from_secs(5))).expect("Cant set read timeout");
+            println!("Waiting for choke message");
+            let mut buf = [0; 512];
+            let read_result = self.stream.read(&mut buf);
+            match read_result {
+                Ok(bytes) => {
+                    println!("read {} bytes", bytes);
+                    print_byte_array_len("choke msg", &buf, bytes); // only print til bytes read
+                    println!("parsing peer msg");
+                    // TODO: check if msg is unchoke, if so, set unchoke
+                    parse_peer_msg(&buf);
+                    self.choked = false;
+                },
+                Err(e) => {
+                    println!("error reading choke msg : {:?}", e)
+                }
+            }
     }
 
     pub fn perform_handshake(&mut self) -> Result<(), Error> {
@@ -541,11 +642,76 @@ impl Peer {
     }
 }
 
+pub fn parse_peer_msg(buf: &[u8]) {
+    // get size
+    let msg_size = get_u32_at(buf, 0);
+
+    println!("msg size = {}", msg_size);
+
+    // get id
+    let id = buf[4];
+    println!("msg id = {}", id);
+    // keep-alive: <len=0000>
+// choke: <len=0001><id=0>
+// unchoke: <len=0001><id=1>
+// interested: <len=0001><id=2>
+// not interested: <len=0001><id=3>
+// have: <len=0005><id=4><piece index>
+// bitfield: <len=0001+X><id=5><bitfield>
+// request: <len=0013><id=6><index><begin><length>
+// piece: <len=0009+X><id=7><index><begin><block>
+// cancel: <len=0013><id=8><index><begin><length>
+// port: <len=0003><id=9><listen-port>
+    match id {
+        0 => {
+            println!("choke message recv");
+        },
+        1 => {
+            println!("unchoke message rcv");
+        },
+        2 => {
+            println!("interested message rcv");
+        },
+        3 => {
+            println!("not interested msg recv");
+        },
+        4 => {
+            println!("have msg recv");
+
+        },
+        5 => {
+            println!("bitfield msg recv");
+            println!("contains {} bits of data", (msg_size - 1) * 8);
+            let (bitfield, new_i) = get_n_bytes_at(&buf.to_vec(), 5, (msg_size - 1) as usize);
+            print_byte_array("bitfield", &bitfield);
+        },
+        6 => {
+            println!("request msg recv");
+        },
+        7 => {
+            println!("piece msg recv");
+        },
+        8 => {
+            println!("cancelled msg recv");
+        },
+        9 => {
+            println!("port msg recv");
+        }
+        _ => {
+            println!("unknown message id: {}", id);
+        }
+
+
+    }
+
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
     use std::str::from_utf8;
+    use lava_torrent::torrent::v1::Torrent;
 
     #[test]
     fn test_make_announce_packet() {
@@ -760,14 +926,25 @@ mod test {
     }
 
     #[test]
-    fn parse_peer_msg() {
-        let resp = [
-            0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72,
-            0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20,
-            0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49,
-            0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x71,
-            0x64, 0x36, 0x37, 0x6F, 0x67, 0x6D, 0x6D,
-        ]
-        .to_vec();
+    fn test_bitfield() {
+        let filepath = "big-buck-bunny.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+
+        let piece_size = torrent.piece_length;
+        let num_pieces = torrent.pieces.len();
+        println!("torrent has {} pieces of size: {}", num_pieces, piece_size);
+
+        let resp = [0x0, 0x0, 0x0, 0x85, 0x5, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE];
+        parse_peer_msg(&resp)
+
+    }
+
+
+    #[test]
+    fn test_parse_msg() {
+        let resp = [0x0, 0x0, 0x0, 0x85, 0x5, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE];
+        parse_peer_msg(&resp)
+
+
     }
 }

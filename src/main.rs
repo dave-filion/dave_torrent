@@ -21,7 +21,7 @@ fn get_torrent_size(t: &Torrent) -> i64 {
 
 fn main() {
     // load torrent file data
-    let filepath = "tears-of-steel.torrent";
+    let filepath = "big-buck-bunny.torrent";
 
     let torrent = Torrent::read_from_file(filepath).unwrap();
 
@@ -123,7 +123,12 @@ fn main() {
             continue
         }
 
-        println!("peer good to go");
+        // actually not garbage, is bitfield
+        peer.recv_garbage();
+
+        peer.send_interested();
+
+        peer.recv_choke();
 
 
     }
