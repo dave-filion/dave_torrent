@@ -322,11 +322,101 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
     buf.to_bytes()
 }
 
+// reads n bytes from buf at index and returns vec
+pub fn get_n_bytes_at(buf: &Vec<u8>, start_i: usize, n_bytes: usize) -> Vec<u8> {
+    let mut v = Vec::new();
+    for i in start_i..start_i+n_bytes {
+        let byte = buf.get(i).unwrap();
+        v.push(byte.clone());
+    }
+    v
+}
+
 pub fn parse_handshake_response(buf: &Vec<u8>) {
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
     println!("len = {:?} (should be 19)", strlen);
+
+
 }
+
+// keep-alive: <len=0000>
+// choke: <len=0001><id=0>
+// unchoke: <len=0001><id=1>
+// interested: <len=0001><id=2>
+// not interested: <len=0001><id=3>
+// have: <len=0005><id=4><piece index>
+// bitfield: <len=0001+X><id=5><bitfield>
+// request: <len=0013><id=6><index><begin><length>
+// piece: <len=0009+X><id=7><index><begin><block>
+// cancel: <len=0013><id=8><index><begin><length>
+// port: <len=0003><id=9><listen-port>
+enum PeerMessage {
+    KeepAlive,
+    Choke(usize), // id = 0
+    Unchoke(usize), // id = 1
+    Interested(usize), // id = 2
+    NotInterested(usize), // id = 3
+    Have(usize, u32), // id = 4, piece_index=4bytes
+    Bitfield(usize, [u8; 4]), // id = 5, bitfield=4bytes
+    Request(usize, u32, u32), // id = 6, index=4, begin=4, length=4
+    Piece(usize), // TODO should have more
+    Cancel(usize),
+    Port(usize),
+}
+
+fn make_choke_msg() -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // length
+    buf.write_u32(1);
+    // id
+    buf.write_u8(0);
+
+    buf.to_bytes()
+}
+
+fn make_unchoke_msg() -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // length
+    buf.write_u32(1);
+    // id
+    buf.write_u8(1);
+
+    buf.to_bytes()
+}
+
+fn make_interested_msg() -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // length
+    buf.write_u32(1);
+    // id
+    buf.write_u8(2);
+
+    buf.to_bytes()
+}
+
+fn make_uninterested_msg() -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // length
+    buf.write_u32(1);
+    // id
+    buf.write_u8(3);
+
+    buf.to_bytes()
+}
+
+fn make_have_msg(piece_index: u32) -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // length
+    buf.write_u32(5);
+    // id
+    buf.write_u8(4);
+    // piece index
+    buf.write_u32(piece_index);
+
+    buf.to_bytes()
+}
+
 
 #[cfg(test)]
 mod test {
@@ -416,6 +506,39 @@ mod test {
     }
 
     #[test]
+    fn test_get_n_bytes_at() {
+        let buf = [
+            0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72,
+            0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x5, 0x20,
+            0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49,
+            0x21, 0x2D, 0xBD, 0x13, 0xEC, 0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74,
+            0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0,
+        ].to_vec();
+
+        let result = get_n_bytes_at(&buf, 2, 7);
+        print_byte_array("result", &result);
+        assert_eq!(result.len(), 7);
+        assert_eq!(result.get(0).unwrap(), &0x69);
+        assert_eq!(result.get(6).unwrap(), &0x65);
+    }
+
+    #[test]
     fn test_tcp_handshake_response() {
         let response = [
             0x13, 0x42, 0x69, 0x74, 0x54, 0x6F, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x20, 0x70, 0x72,
@@ -461,5 +584,36 @@ mod test {
         let ip = IpAddr::V4(ip);
         let port = 34264;
         // connect_to_peer(ip, port);
+    }
+
+    #[test]
+    fn test_make_choke_msg() {
+        let msg = make_choke_msg();
+        print_byte_array("choke", &msg);
+        assert_eq!(msg.len(), 5); // should be 5 bytes long
+        assert_eq!(msg.get(3).unwrap(), &1u8);
+        assert_eq!(msg.get(4).unwrap(), &0u8);
+    }
+
+
+    #[test]
+    fn test_make_unchoke_msg() {
+        let msg = make_unchoke_msg();
+        print_byte_array("unchoke", &msg);
+        assert_eq!(msg.len(), 5); // should be 5 bytes long
+        assert_eq!(msg.get(3).unwrap(), &1u8);
+        assert_eq!(msg.get(4).unwrap(), &1u8);
+    }
+
+    #[test]
+    fn test_make_have_msg() {
+        let pi = 4;
+        let msg = make_have_msg(pi);
+        print_byte_array("have", &msg);
+        assert_eq!(msg.len(), 9); // should be 9 bytes long
+        assert_eq!(msg.get(3).unwrap(), &5u8);
+        assert_eq!(msg.get(4).unwrap(), &4u8);
+        assert_eq!(msg.get(8).unwrap(), &4u8);
+
     }
 }
