@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, AsByteSliceMut};
 use std::io::Cursor;
 
 use bytebuffer::ByteBuffer;
@@ -6,6 +6,7 @@ use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
+use std::str::from_utf8;
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -27,9 +28,9 @@ pub fn print_byte_array(header: &str, bytes: &[u8]) {
     print!("{} => [", header);
     for (i, b) in bytes.iter().enumerate() {
         if i == 0 {
-            print!("{:X?}", b);
+            print!("0x{:X?}", b);
         } else {
-            print!(", {:X?}", b);
+            print!(", 0x{:X?}", b);
         }
     }
     println!("]");
@@ -322,22 +323,53 @@ pub fn make_handshake(peer_id: &[u8; 20], info_hash: &[u8; 20]) -> Vec<u8> {
     buf.to_bytes()
 }
 
-// reads n bytes from buf at index and returns vec
-pub fn get_n_bytes_at(buf: &Vec<u8>, start_i: usize, n_bytes: usize) -> Vec<u8> {
+// reads n bytes from buf at index and returns vec, returns new index also
+pub fn get_n_bytes_at(buf: &Vec<u8>, start_i: usize, n_bytes: usize) -> (Vec<u8>, usize) {
     let mut v = Vec::new();
+    let mut j = start_i;
     for i in start_i..start_i+n_bytes {
         let byte = buf.get(i).unwrap();
         v.push(byte.clone());
+        j = i;
     }
-    v
+    (v, j)
 }
 
-pub fn parse_handshake_response(buf: &Vec<u8>) {
+#[derive(Debug)]
+pub struct HandshakeResponse {
+    pub protocol: String,
+    pub info_hash: Vec<u8>, //20 bytes
+    pub peer_id: Vec<u8>, // 20 bytes
+}
+
+pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
     println!("len = {:?} (should be 19)", strlen);
 
+    // get pstr
+    let (pstr, new_i) = get_n_bytes_at(&buf, 1, strlen.clone() as usize);
+    // verify protocol is correct
+    let prot = from_utf8(&pstr).expect("protocol not parsable to str");
+    println!("prot = {}", prot);
+    if prot != "BitTorrent protocol" {
+        println!("protocol isnt bittorrent, its: {}", prot);
+        // drop connection
+    }
 
+    // get info hash
+    let (info_hash, new_i) = get_n_bytes_at(&buf, (1 + strlen.clone() + 8) as usize, 20);
+    print_byte_array("info hash", &info_hash);
+
+    // get peer_id
+    let (peer_id, _) = get_n_bytes_at(&buf, new_i + 1, 20);
+    print_byte_array("peer id", &peer_id);
+
+    HandshakeResponse {
+        protocol: prot.to_string(),
+        info_hash,
+        peer_id,
+    }
 }
 
 // keep-alive: <len=0000>
@@ -531,11 +563,13 @@ mod test {
             0, 0,
         ].to_vec();
 
-        let result = get_n_bytes_at(&buf, 2, 7);
+        let (result, new_i) = get_n_bytes_at(&buf, 2, 7);
         print_byte_array("result", &result);
         assert_eq!(result.len(), 7);
         assert_eq!(result.get(0).unwrap(), &0x69);
         assert_eq!(result.get(6).unwrap(), &0x65);
+        println!("new i = {}", new_i    );
+        assert_eq!(new_i, 8);
     }
 
     #[test]
@@ -565,7 +599,11 @@ mod test {
         ]
         .to_vec();
 
-        parse_handshake_response(&response);
+        let response = parse_handshake_response(&response);
+        println!("response : {:?}", response);
+        assert_eq!(response.protocol, "BitTorrent protocol".to_string());
+        assert_eq!(response.info_hash, [0x20, 0x9C, 0x82, 0x26, 0xB2, 0x99, 0xB3, 0x8, 0xBE, 0xAF, 0x2B, 0x9C, 0xD3, 0xFB, 0x49, 0x21, 0x2D, 0xBD, 0x13, 0xEC].to_vec());
+        assert_eq!(response.peer_id, [0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D, 0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F].to_vec());
     }
 
     #[test]
