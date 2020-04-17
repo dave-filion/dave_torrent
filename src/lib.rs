@@ -279,10 +279,12 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 }
 
 // tcp connection to peer
-pub fn connect_to_peer(ip: IpAddr, port: u16, _peer_id: &[u8; 20]) -> Result<TcpStream, Error> {
+pub fn connect_to_peer(ip: IpAddr, port: u16) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
     // 5 sec connection timeout
     if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(5)) {
+        // set stream to blocking
+        stream.set_nonblocking(false).expect("cant set stream to blocking");
         Result::Ok(stream)
     } else {
         Result::Err(Error)
@@ -374,7 +376,7 @@ pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
 // piece: <len=0009+X><id=7><index><begin><block>
 // cancel: <len=0013><id=8><index><begin><length>
 // port: <len=0003><id=9><listen-port>
-enum PeerMessage {
+pub enum PeerMessage {
     KeepAlive,
     Choke(usize), // id = 0
     Unchoke(usize), // id = 1
@@ -388,7 +390,7 @@ enum PeerMessage {
     Port(usize),
 }
 
-fn make_choke_msg() -> Vec<u8> {
+pub fn make_choke_msg() -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // length
     buf.write_u32(1);
@@ -398,7 +400,7 @@ fn make_choke_msg() -> Vec<u8> {
     buf.to_bytes()
 }
 
-fn make_unchoke_msg() -> Vec<u8> {
+pub fn make_unchoke_msg() -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // length
     buf.write_u32(1);
@@ -408,7 +410,7 @@ fn make_unchoke_msg() -> Vec<u8> {
     buf.to_bytes()
 }
 
-fn make_interested_msg() -> Vec<u8> {
+pub fn make_interested_msg() -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // length
     buf.write_u32(1);
