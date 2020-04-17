@@ -128,8 +128,15 @@ fn main() {
 
         peer.send_interested();
 
-        peer.recv_choke();
-
+        if peer.recv_choke() {
+            let piece_index = 0;
+            let begin = 0;
+            let len = 512; // 512 byte slice
+            println!("peer unchoked, requesting piece {} | begin {} | len: {}", piece_index, begin, len);
+            peer.request_piece(piece_index, begin, len);
+        } else {
+            println!("Couldnt unchoke peer, trying next");
+        }
 
     }
 }

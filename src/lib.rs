@@ -459,6 +459,26 @@ fn make_have_msg(piece_index: u32) -> Vec<u8> {
     buf.to_bytes()
 }
 
+fn make_request_msg(piece_index: u32, begin: u32, len: u32) -> Vec<u8> {
+    let mut buf = ByteBuffer::new();
+    // msg len
+    buf.write_u32(13);
+
+    // id
+    buf.write_u8(6);
+
+    // piece
+    buf.write_u32(piece_index);
+
+    // begin
+    buf.write_u32(begin);
+
+    // len
+    buf.write_u32(len);
+
+    buf.to_bytes()
+}
+
 pub struct Peer {
     choked: bool,
     stream: TcpStream,
@@ -561,7 +581,7 @@ impl Peer {
         self.stream.write_all(&msg).unwrap();
     }
 
-    pub fn recv_choke(&mut self) {
+    pub fn recv_choke(&mut self) -> bool {
         // wait 5 secs for choke msg
         self.stream.set_read_timeout(Some(Duration::from_secs(5))).expect("Cant set read timeout");
             println!("Waiting for choke message");
@@ -575,11 +595,38 @@ impl Peer {
                     // TODO: check if msg is unchoke, if so, set unchoke
                     parse_peer_msg(&buf);
                     self.choked = false;
+                    true
                 },
                 Err(e) => {
-                    println!("error reading choke msg : {:?}", e)
+                    println!("error reading choke msg : {:?}", e);
+                    false
                 }
             }
+    }
+
+    // sends request to peer for piece_index, with offset begin and length len
+    pub fn request_piece(&mut self, piece: u32, begin: u32, len: u32) {
+        println!("Sending request message for piece: {}, begin: {}, len: {}", piece, begin, len);
+        let req = make_request_msg(piece, begin, len);
+        self.stream.write_all(&req).expect("Write request failed");
+
+        // listen for response
+        println!("Waiting for piece response");
+        self.stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+
+        let mut buf = [0;1028]; // 1028 chunks
+        match self.stream.read(&mut buf) {
+            Ok(bytes_read) => {
+                println!("Read {} bytes for piece", bytes_read);
+                print_byte_array_len("piece result", &buf, bytes_read);
+                parse_peer_msg(&buf);
+            },
+            Err(e) => {
+                println!("error reading piece after request {:?}", e);
+            }
+        }
+
+
     }
 
     pub fn perform_handshake(&mut self) -> Result<(), Error> {
