@@ -281,12 +281,10 @@ pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {
 // tcp connection to peer
 pub fn connect_to_peer(ip: IpAddr, port: u16, _peer_id: &[u8; 20]) -> Result<TcpStream, Error> {
     let sock_addr = SocketAddr::new(ip, port);
-    println!("connecting to remote socket at addr: {:?}", sock_addr);
-    if let Ok(stream) = TcpStream::connect(sock_addr) {
-        println!("connected to peer @ {:?}", sock_addr);
+    // 5 sec connection timeout
+    if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(5)) {
         Result::Ok(stream)
     } else {
-        println!("Failed to connect to peer");
         Result::Err(Error)
     }
 }
@@ -343,27 +341,20 @@ pub struct HandshakeResponse {
 }
 
 pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
+
     // 1 byte = 19
     let strlen = buf.get(0).unwrap();
-    println!("len = {:?} (should be 19)", strlen);
 
     // get pstr
     let (pstr, new_i) = get_n_bytes_at(&buf, 1, strlen.clone() as usize);
     // verify protocol is correct
     let prot = from_utf8(&pstr).expect("protocol not parsable to str");
-    println!("prot = {}", prot);
-    if prot != "BitTorrent protocol" {
-        println!("protocol isnt bittorrent, its: {}", prot);
-        // drop connection
-    }
 
     // get info hash
     let (info_hash, new_i) = get_n_bytes_at(&buf, (1 + strlen.clone() + 8) as usize, 20);
-    print_byte_array("info hash", &info_hash);
 
     // get peer_id
     let (peer_id, _) = get_n_bytes_at(&buf, new_i + 1, 20);
-    print_byte_array("peer id", &peer_id);
 
     HandshakeResponse {
         protocol: prot.to_string(),

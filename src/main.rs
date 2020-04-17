@@ -112,7 +112,7 @@ fn main() {
 
                     println!("Waiting for response from {:?}:{}", ip, port);
                     // listen for response
-                    let mut resp_buf = [0; 64];
+                    let mut resp_buf = [0; 128]; // needs to be more then 64
                     let read_result = stream.read(&mut resp_buf);
                     if let Ok(bytes_read) = read_result {
                         println!("Recieved {} byte handshake response from {:?}:{}", bytes_read, ip, port);
@@ -134,11 +134,7 @@ fn main() {
                             println!("...info hash OK");
                         }
 
-                        if handshake_response.peer_id != peer_id.to_vec() {
-                            println!("Peer id doesnt match...");
-                        } else {
-                            println!("...peer id OK");
-                        }
+                        print_byte_array("remote peer id", &handshake_response.peer_id);
 
                         // handshake is fine, start listening for have message
                         println!("Handshake to {:?}:{} SUCCESS, listening for messages", ip, port);
