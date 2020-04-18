@@ -17,6 +17,12 @@ impl WorkChunk {
     }
 }
 
+#[derive(Debug)]
+pub struct DataChunk {
+    pub data: Vec<u8>,
+    pub work_chunk: WorkChunk,
+}
+
 pub fn make_work_queue(num_pieces: usize, piece_size: i64, chunk_size: i64) -> VecDeque<WorkChunk> {
     println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
     let mut queue = VecDeque::new();
@@ -45,9 +51,7 @@ pub fn make_work_queue(num_pieces: usize, piece_size: i64, chunk_size: i64) -> V
                 i += chunk_size;
             }
         }
-
     }
-
     queue
 }
 
