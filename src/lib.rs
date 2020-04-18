@@ -12,6 +12,7 @@ pub mod download;
 pub mod peer;
 pub mod announce;
 
+pub const BLOCK_SIZE: u32 = 16384; // 16384 (2^14) bytes is accepted block size
 
 pub fn print_byte_array_len(header: &str, bytes: &[u8], until: usize) {
     print!("{} => [", header);

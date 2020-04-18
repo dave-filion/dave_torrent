@@ -23,7 +23,7 @@ pub struct DataChunk {
     pub work_chunk: WorkChunk,
 }
 
-pub fn make_work_queue(num_pieces: usize, piece_size: i64, chunk_size: i64) -> VecDeque<WorkChunk> {
+pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> VecDeque<WorkChunk> {
     println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
     let mut queue = VecDeque::new();
 
@@ -58,6 +58,7 @@ pub fn make_work_queue(num_pieces: usize, piece_size: i64, chunk_size: i64) -> V
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::BLOCK_SIZE;
 
     #[test]
     fn test_make_work_queue() {
@@ -91,9 +92,14 @@ mod test {
         // real numbers
         let piece_size = 262144;
         let num_pieces = 1055;
-        let chunk_size = 1028 * 10; // 10 kb
+        let chunk_size = BLOCK_SIZE;
         let mut q = make_work_queue(num_pieces, piece_size, chunk_size);
         println!("{} chunks", q.len());
 
+        let first_work = q.pop_front().unwrap();
+        println!("first = {:?}", first_work);
+
+        let second = q.pop_front().unwrap();
+        println!("second = {:?}", second);
     }
 }
