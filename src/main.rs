@@ -128,8 +128,11 @@ fn main() {
 
     //*
     // GENERATE WORK QUEUE
-    let chunk_size = 512;
-    let mut work_queue = make_work_queue(torrent.pieces.len(), torrent.piece_length, chunk_size);
+    let chunk_size = BLOCK_SIZE;
+    let mut work_queue = make_work_queue(
+        torrent.pieces.len(),
+        torrent.piece_length as u32,
+        chunk_size);
 
     //*
     // ATTEMPT CONNECTING TO EACH PEER SERIALLY
