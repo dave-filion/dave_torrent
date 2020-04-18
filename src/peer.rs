@@ -1,5 +1,6 @@
 use rand::{AsByteSliceMut, Rng};
 use std::io::{Cursor, Read, Write};
+use std::thread;
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
@@ -9,7 +10,7 @@ use std::str::from_utf8;
 use std::time::Duration;
 use std::sync::mpsc::{channel, Sender};
 
-use crate::download::{WorkChunk, DataChunk};
+use crate::download::{WorkChunk, Block};
 use crate::*;
 use std::collections::VecDeque;
 
@@ -20,7 +21,7 @@ pub fn attempt_peer_download(
     info_hash_array: &[u8; 20],
     peer_id: &[u8; 20],
     work_queue: &mut VecDeque<WorkChunk>,
-    processing_chan: Sender<DataChunk>,
+    processing_chan: Sender<Block>,
 ) -> Result<(), Error> {
     println!("\n---------------------\n");
     println!("Connecting to peer: {:?}:{}", ip, port);
@@ -32,14 +33,12 @@ pub fn attempt_peer_download(
     );
 
     if let Err(e) = peer_result {
-        println!("Error connecting to peer: {:?}", e);
         return Result::Err(Error);
     }
 
     let mut peer = peer_result.unwrap();
     let handshake_result = peer.perform_handshake();
     if let Err(e) = handshake_result {
-        println!("Error performing handshake: {:?}", e);
         return Result::Err(Error);
     }
 
@@ -48,27 +47,29 @@ pub fn attempt_peer_download(
     peer.recv_garbage();
     peer.send_interested();
 
-    if peer.recv_choke() {
+    if peer.recv_unchoke() {
         // start pulling work off work queue
         println!("Peer unchoked...Starting to pull work off work queue");
         loop {
             match work_queue.pop_front() {
                 Some(next_chunk) => {
-                    println!("Next chunk to download: {:?}", next_chunk);
-                    let piece_result = peer.request_piece(
-                        next_chunk.piece_index,
-                        next_chunk.begin_index,
-                        next_chunk.length,
-                    );
-
-                    match piece_result {
-                        Ok(piece_data) => {
-                            println!("Got piece data!");
+                    print!("Downloading block {}:{}...", next_chunk.piece_index, next_chunk.block_id);
+                    match peer.fetch_block_data(&next_chunk) {
+                        Ok(data) => {
+                            println!("got it!");
                             // print_byte_array("piece data", &piece_data);
+                            let block = Block {
+                                data,
+                                piece_index: next_chunk.piece_index,
+                                offset: next_chunk.begin_index,
+                                block_id: next_chunk.block_id,
+                            };
 
-
-
-                            // processing_chan.send()
+                            if let Err(e) = processing_chan.send(block) {
+                                println!("error sending block to processing thread! Putting chunk back on work queue and breaking");
+                                work_queue.push_back(next_chunk);
+                                break;
+                            }
                         },
                         Err(e) => {
                             println!("Error getting piece data, putting chunk back on queue, and breaking");
@@ -181,16 +182,16 @@ pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
 #[derive(Debug)]
 pub enum PeerMessage {
     KeepAlive,
-    Choke(usize),                  // id = 0
-    Unchoke(usize),                // id = 1
-    Interested(usize),             // id = 2
-    NotInterested(usize),          // id = 3
-    Have(usize, u32),              // id = 4, piece_index=4bytes
-    Bitfield(usize, Vec<u8>),      // id = 5, bitfield
-    Request(usize, u32, u32, u32), // id = 6, index=4, begin=4, length=4
-    Piece(usize, u32, u32, Vec<u8>),         // id = 6, index=4, offset/begin=4, vector of piece data
-    Cancel(usize),
-    Port(usize),
+    Choke(u32),                  // id = 0
+    Unchoke(u32),                // id = 1
+    Interested(u32),             // id = 2
+    NotInterested(u32),          // id = 3
+    Have(u32, u32),              // id = 4, piece_index=4bytes
+    Bitfield(u32, Vec<u8>),      // id = 5, bitfield
+    Request(u32, u32, u32, u32), // id = 6, index=4, begin=4, length=4
+    Piece(u32, u32, u32, Option<Vec<u8>>),         // id = 6, index=4, offset/begin=4, vector of piece data
+    Cancel(u32),
+    Port(u32),
 }
 
 pub fn make_choke_msg() -> Vec<u8> {
@@ -298,24 +299,19 @@ impl Peer {
                 peer_id,
             })
         } else {
-            println!("Couldnt connect to peer: {:?}:{}", ip, port);
             Result::Err(Error)
         }
     }
 
     // for some reason after handshake theres a bunch of nonesense sent, read it out of queue
     pub fn recv_garbage(&mut self) {
-        println!("reading garbage from peer");
         let mut buf = [0; 512];
         let read_result = self.stream.read(&mut buf);
         match read_result {
             Ok(bytes_read) => {
-                println!("Read {} bytes of crap from peer. looks like...", bytes_read);
-                print_byte_array_len("crap", &buf, bytes_read);
+                print_byte_array_len("bitfield", &buf, bytes_read);
             }
-            Err(e) => {
-                println!("error reading crap from peer: {:?}", e);
-            }
+            Err(e) => {}
         }
     }
 
@@ -364,24 +360,22 @@ impl Peer {
     }
 
     pub fn send_interested(&mut self) {
-        println!("Sending interested message to peer");
+        print!("Sending interested message...");
         let msg = make_interested_msg();
         self.stream.write_all(&msg).unwrap();
+        println!("sent");
     }
 
-    pub fn recv_choke(&mut self) -> bool {
-        // wait 5 secs for choke msg
+    pub fn recv_unchoke(&mut self) -> bool {
         self.stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .expect("Cant set read timeout");
-        println!("Waiting for choke message");
+        print!("Waiting for unchoke message...");
         let mut buf = [0; 512];
         let read_result = self.stream.read(&mut buf);
         match read_result {
             Ok(bytes) => {
-                println!("read {} bytes", bytes);
-                print_byte_array_len("choke msg", &buf, bytes); // only print til bytes read
-                println!("parsing peer msg");
+                println!("received, unchoking peer");
                 // TODO: check if msg is unchoke, if so, set unchoke
                 parse_peer_msg(&buf);
                 self.choked = false;
@@ -396,52 +390,96 @@ impl Peer {
 
     // sends request to peer for piece_index, with offset begin and length len
     // returns result with piece data, or error
-    pub fn request_piece(&mut self, piece: u32, begin: u32, len: u32) -> Result<Vec<u8>, Error> {
-        println!(
-            "Sending request message for piece: {}, begin: {}, len: {}",
-            piece, begin, len
-        );
-        let req = make_request_msg(piece, begin, len);
-        self.stream.write_all(&req).expect("Write request failed");
+    pub fn fetch_block_data(&mut self, work: &WorkChunk) -> Result<Vec<u8>, Error> {
+        let block_id = work.block_id;
+        let piece_id = work.piece_index;
+        let offset = work.begin_index;
+        let length = work.length;
 
-        // listen for response
-        println!("Waiting for piece response");
+        println!("Attempting to fetch Block: {}-{}", piece_id, block_id);
+
+        // write request to stream
+        let req = make_request_msg(piece_id, offset, length);
+        self.stream.write_all(&req).expect("write all failed"); //TODO error handle correctly
+
+        // set longer read timeout in case of slow connection
         self.stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
 
-        let mut buf = [0; 1028]; // 1028 chunks
-        match self.stream.read(&mut buf) {
-            Ok(bytes_read) => {
-                // println!("Read {} bytes for piece", bytes_read);
-                // print_byte_array_len("piece result", &buf, bytes_read);
-                if let Some(piece_msg) = parse_peer_msg(&buf) {
-                    if let PeerMessage::Piece(_id, piece_index, piece_offset, piece_data) = piece_msg {
-                        Result::Ok(piece_data)
+        // since it may take multiple messages to send all data, need to concat to this buffer
+        let mut all_data = Vec::new();
+
+        // keep reading stream until all data for block has been received
+        let mut i = 0;
+        let mut total_msg_size: isize = 0; // is set on first read
+        let mut total_bytes_read : isize = 0;
+        loop {
+
+            let mut read_buf = [0; 5000];
+            let bytes_read = self.stream.read(&mut read_buf).expect("read filed"); // TODO error handle correctly
+
+            if i == 0 {
+                // slice only section of buf written to
+                let sliced_buf = &read_buf[..bytes_read];
+                if let Some(msg) = parse_peer_msg(sliced_buf) {
+                    if let PeerMessage::Piece(msg_size, piece_id, offset, data) = msg {
+                        println!("read #{}: {} bytes read, msg size: {}", i+1, bytes_read, msg_size);
+                        total_msg_size = msg_size as isize;
+                        total_bytes_read += bytes_read as isize;
+
+                        if let Some(d) = data {
+                            println!("size of data: {} bytes", d.len());
+                            all_data.extend(d);
+                        } else {
+                            println!("msg had no piece data");
+                        }
+
+                        println!("{} bytes remaining", total_msg_size - total_bytes_read);
+                        println!("current data size is {}", all_data.len());
+
                     } else {
-                        println!("Msg recv was NOT piece, instead was: {:?}", piece_msg);
-                        Result::Err(Error)
+                        println!("Peer message was not a piece msg as expected! returning error");
+                        return Err(Error)
                     }
                 } else {
-                    println!("no peerMsg could be parsed");
-                    Result::Err(Error)
+                    println!("Failed to parse peer message, returning error");
+                    return Err(Error)
+                }
+            } else {
+                // second or more reads, append data to buffer
+                println!("read #{}: {} bytes read", i+1, bytes_read);
+                total_bytes_read += bytes_read as isize;
+                let remaining_to_read = total_msg_size - total_bytes_read;
+                println!("{} bytes remaining", remaining_to_read);
+
+                // append data
+                let sliced_buf = &read_buf[..bytes_read];
+                all_data.extend_from_slice(sliced_buf);
+
+                println!("current data size is: {}", all_data.len());
+
+                if remaining_to_read <= 0 {
+                    println!("0 bytes remaining to read, returning");
+                    println!("final data size is: {}", all_data.len());
+                    return Ok(all_data)
+                } else {
+                    println!("still more bytes to go! will read again in a sec");
                 }
             }
-            Err(e) => {
-                println!("error reading piece after request {:?}", e);
-                Result::Err(Error)
-            }
+            // wait a sec then read again
+            thread::sleep(Duration::from_secs(1));
+            i+=1;
         }
     }
 
     pub fn perform_handshake(&mut self) -> Result<(), Error> {
-        println!("Peer at {:?} performing handshake...", self.ip);
+        print!("performing handshake...");
         let handshake = make_handshake(&self.peer_id, &self.info_hash);
 
         // write handshake to stream
         let write_result = self.stream.write_all(&handshake);
         if let Ok(bytes_wrote) = write_result {
-            println!("Waiting for response from {:?}:{}", self.ip, self.port);
             // set read timeout
             self.stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
@@ -449,48 +487,30 @@ impl Peer {
             let mut hs_resp = [0; 128]; // needs to be more then 64
             let read_result = self.stream.read(&mut hs_resp);
             if let Ok(bytes_read) = read_result {
-                println!(
-                    "Recieved {} byte handshake response from {:?}:{}",
-                    bytes_read, self.ip, self.port
-                );
-                // parse response
-                // print_byte_array("handshake response", &resp_buf);
                 let handshake_response = parse_handshake_response(&hs_resp.to_vec());
+
                 // verify response is accurate
-                println!("verifying handshake from {:?}:{}", self.ip, self.port);
                 if handshake_response.protocol != "BitTorrent protocol" {
-                    println!("Protocol incorrect: {}", handshake_response.protocol);
+                    println!("Handshake protocol incorrect: {}", handshake_response.protocol);
                     return Result::Err(Error);
-                } else {
-                    println!("...protocol OK")
                 }
 
                 if handshake_response.info_hash != self.info_hash {
-                    println!("Info hashes dont match... going to next peer");
+                    println!("Handshake Info hashes dont match!");
                     return Result::Err(Error);
-                } else {
-                    println!("...info hash OK");
                 }
 
                 // handshake is fine, start listening for have message
-                println!(
-                    "Handshake to {:?}:{} SUCCESS, listening for messages",
-                    self.ip, self.port
-                );
+                println!("success!");
 
                 Result::Ok(())
             } else {
-                println!(
-                    "Reading handshake response from stream failed for {:?}:{}",
-                    self.ip, self.port
-                );
+                println!("handshake response failure.");
+
                 Result::Err(Error)
             }
         } else {
-            println!(
-                "Writing handshake to stream failed for {:?}:{}",
-                self.ip, self.port
-            );
+            println!("handshake request failure.");
             Result::Err(Error)
         }
     }
@@ -515,51 +535,46 @@ pub fn parse_peer_msg(buf: &[u8]) -> Option<PeerMessage> {
     // port: <len=0003><id=9><listen-port>
     match id {
         0 => {
-            println!("choke message recv");
-            Some(PeerMessage::Choke(0))
+            Some(PeerMessage::Choke(msg_size))
         }
         1 => {
-            println!("unchoke message rcv");
-            Some(PeerMessage::Unchoke(1))
+            Some(PeerMessage::Unchoke(msg_size))
         }
         2 => {
-            println!("interested message rcv");
-            Some(PeerMessage::Interested(2))
+            Some(PeerMessage::Interested(msg_size))
         }
         3 => {
-            println!("not interested msg recv");
-            Some(PeerMessage::NotInterested(3))
+            Some(PeerMessage::NotInterested(msg_size))
         }
         4 => {
-            println!("have msg recv");
-            Some(PeerMessage::Have(4, 0)) // TODO parse have piece
+            Some(PeerMessage::Have(msg_size, 0)) // TODO parse have piece
         }
         5 => {
-            println!("bitfield msg recv");
-            println!("contains {} bits of data", (msg_size - 1) * 8);
             let (bitfield, new_i) = get_n_bytes_at(&buf.to_vec(), 5, (msg_size - 1) as usize);
             print_byte_array("bitfield", &bitfield);
-            Some(PeerMessage::Bitfield(5, bitfield))
+            Some(PeerMessage::Bitfield(msg_size, bitfield))
         }
         6 => {
-            println!("request msg recv");
-            Some(PeerMessage::Request(6, 0, 0, 0)) // TODO parse requested piece
+            Some(PeerMessage::Request(msg_size, 0, 0, 0)) // TODO parse requested piece
         }
         7 => {
-            println!("piece msg recv");
-            println!("msg size: {}", msg_size);
             let piece_index = get_u32_at(&buf, 5);
             let piece_offset = get_u32_at(&buf, 9);
-            let data = get_bytes_til_end(&buf, 13);
-            Some(PeerMessage::Piece(7, piece_index, piece_offset, data))
+
+            // if buf is shorter then 13, doesnt have any data
+            let data = if buf.len() > 13 {
+                Some(get_bytes_til_end(&buf, 13))
+            } else {
+                None
+            };
+
+            Some(PeerMessage::Piece(msg_size, piece_index, piece_offset, data))
         }
         8 => {
-            println!("cancelled msg recv");
-            Some(PeerMessage::Cancel(8))
+            Some(PeerMessage::Cancel(msg_size))
         }
         9 => {
-            println!("port msg recv");
-            Some(PeerMessage::Port(9))
+            Some(PeerMessage::Port(msg_size))
         }
         _ => {
             println!("unknown message id: {}", id);
@@ -584,6 +599,9 @@ mod test {
                 assert_eq!(piece_index, 0);
                 assert_eq!(piece_offset,15360); // validate this is correct
 
+                assert_eq!(data.is_some(), true);
+                let data = data.unwrap();
+
                 print_byte_array("data", &data);
                 println!("data is {} bytes", data.len());
                 assert!(!data.is_empty());
@@ -593,6 +611,15 @@ mod test {
                 panic!("Should have been a piece message");
             }
         }
+    }
 
+    #[test]
+    fn test_slice_data_buffer() {
+        // buf has message in first 13 values, then 0's
+        let bytes_read = 13;
+        let buf =  [0x0, 0x0, 0x2, 0x9, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3C, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x13, 0x88, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1F, 0x40, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xF, 0xA0, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xF, 0xA0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xF, 0xA0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x13, 0x88, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x13, 0x88, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xF, 0xA0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x7, 0xD0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x17, 0x70, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x17, 0x70, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x1B, 0x58, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x17, 0x70, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xB, 0xB8, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x17, 0x70, 0x0, 0x0, 0x0];
+
+        let sliced_buf = &buf[..bytes_read];
+        print_byte_array("sliced", sliced_buf);
     }
 }

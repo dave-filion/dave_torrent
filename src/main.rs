@@ -5,11 +5,14 @@ use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::UdpSocket;
 use std::time::Duration;
+use std::thread;
+use std::sync::mpsc::channel;
 
 use dave_torrent::announce::*;
-use dave_torrent::download::make_work_queue;
+use dave_torrent::download::{make_work_queue, Block};
 use dave_torrent::peer::*;
 use dave_torrent::*;
+
 
 fn get_torrent_size(t: &Torrent) -> i64 {
     // calculate how many files and total torrent size
@@ -135,6 +138,27 @@ fn main() {
         chunk_size);
 
     //*
+    // START PROCESSING THREAD AND MAKE CHANNELS
+    let (tx, rx) = channel::<Block>();
+    let block_proc_handle =  thread::spawn(move || {
+        println!("Block processing thread started!");
+
+        loop {
+            println!("Waiting for incoming blocks...");
+            match rx.recv() {
+                Ok(block) => {
+                    println!("Recv block: {} for processing", block.block_id)
+                    // TODO actually do something with block
+                },
+                Err(e) => {
+                    println!("Recv Error: {:?}. Breaking", e);
+                    break;
+                }
+            }
+        }
+    });
+
+    //*
     // ATTEMPT CONNECTING TO EACH PEER SERIALLY
     for (ip, port) in &peer_addrs {
         match attempt_peer_download(
@@ -143,11 +167,18 @@ fn main() {
             &info_hash_array,
             &peer_id,
             &mut work_queue,
+            tx.clone(),
         ) {
             Ok(()) => println!("peer connection ended successfully"),
             Err(_e) => println!("Error attempting download from peer"),
         }
     }
+
+    // wait for processing thread
+    println!("Waiting for block processing thead to join...");
+    block_proc_handle.join().unwrap();
+
+    println!("DONE");
 }
 
 #[cfg(test)]

@@ -5,22 +5,26 @@ pub struct WorkChunk {
     pub piece_index: u32,
     pub begin_index: u32,
     pub length: u32,
+    pub block_id: u32, // unique id per piece for each block
 }
 
 impl WorkChunk {
-    pub fn new(p: u32, b: u32, l: u32) -> Self {
+    pub fn new(p: u32, b: u32, l: u32, block_id: u32) -> Self {
         WorkChunk {
             piece_index: p,
             begin_index: b,
-            length: l
+            length: l,
+            block_id
         }
     }
 }
 
 #[derive(Debug)]
-pub struct DataChunk {
+pub struct Block {
     pub data: Vec<u8>,
-    pub work_chunk: WorkChunk,
+    pub piece_index: u32,
+    pub offset: u32,
+    pub block_id: u32,
 }
 
 pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> VecDeque<WorkChunk> {
@@ -30,6 +34,7 @@ pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> V
     // seperate pieces into chunks
     for piece_index in 0..num_pieces {
         let mut i = 0;
+        let mut block_id = 0;
         loop {
             if i == piece_size {
                 break
@@ -39,6 +44,7 @@ pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> V
                     piece_index: piece_index as u32,
                     begin_index: i as u32,
                     length: len as u32,
+                    block_id,
                 });
                 break
             } else {
@@ -46,9 +52,11 @@ pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> V
                     piece_index: piece_index as u32,
                     begin_index: i as u32,
                     length: chunk_size as u32,
+                    block_id,
                 });
 
                 i += chunk_size;
+                block_id += 1;
             }
         }
     }
@@ -88,6 +96,7 @@ mod test {
         assert_eq!(first.piece_index, 0);
         assert_eq!(first.begin_index, 0);
         assert_eq!(first.length, 3);
+        assert_eq!(first.block_id, 0);
 
         // real numbers
         let piece_size = 262144;

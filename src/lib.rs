@@ -104,8 +104,6 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
         }
 
         println!("> Perform connection attempt ({}):", attempt);
-
-        print!("Sending connect request...");
         // send message to remote udp port
         match sock.send(&connect_packet) {
             Ok(_) => {
@@ -118,11 +116,9 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
             }
         }
 
-        print!("Waiting for response...");
         let mut response_buf = [0; 16];
         match sock.recv(&mut response_buf) {
             Ok(bytes_read) => {
-                println!("got {} byte response!", bytes_read);
                 // extract conn id
                 let (_conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
                 return Ok(conn_id_bytes)
