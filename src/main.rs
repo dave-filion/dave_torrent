@@ -7,6 +7,8 @@ use std::net::UdpSocket;
 use std::time::Duration;
 
 use dave_torrent::*;
+use dave_torrent::peer::*;
+use dave_torrent::announce::*;
 
 fn get_torrent_size(t: &Torrent) -> i64 {
     // calculate how many files and total torrent size
