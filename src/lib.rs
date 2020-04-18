@@ -140,6 +140,9 @@ mod test {
     use std::net::{IpAddr, Ipv4Addr};
     use std::str::from_utf8;
     use lava_torrent::torrent::v1::Torrent;
+    use crate::peer::*;
+    use crate::announce::*;
+    use crate::download::*;
 
     #[test]
     fn test_make_announce_packet() {

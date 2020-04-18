@@ -106,9 +106,9 @@ pub enum PeerMessage {
     Interested(usize),        // id = 2
     NotInterested(usize),     // id = 3
     Have(usize, u32),         // id = 4, piece_index=4bytes
-    Bitfield(usize, [u8; 4]), // id = 5, bitfield=4bytes
-    Request(usize, u32, u32), // id = 6, index=4, begin=4, length=4
-    Piece(usize),             // TODO should have more
+    Bitfield(usize, Vec<u8>), // id = 5, bitfield
+    Request(usize, u32, u32, u32), // id = 6, index=4, begin=4, length=4
+    Piece(usize, Vec<u8>),         // id = 6, vector of piece data
     Cancel(usize),
     Port(usize),
 }
@@ -143,7 +143,7 @@ pub fn make_interested_msg() -> Vec<u8> {
     buf.to_bytes()
 }
 
-fn make_uninterested_msg() -> Vec<u8> {
+pub fn make_uninterested_msg() -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // length
     buf.write_u32(1);
@@ -153,7 +153,7 @@ fn make_uninterested_msg() -> Vec<u8> {
     buf.to_bytes()
 }
 
-fn make_have_msg(piece_index: u32) -> Vec<u8> {
+pub fn make_have_msg(piece_index: u32) -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // length
     buf.write_u32(5);
@@ -165,7 +165,7 @@ fn make_have_msg(piece_index: u32) -> Vec<u8> {
     buf.to_bytes()
 }
 
-fn make_request_msg(piece_index: u32, begin: u32, len: u32) -> Vec<u8> {
+pub fn make_request_msg(piece_index: u32, begin: u32, len: u32) -> Vec<u8> {
     let mut buf = ByteBuffer::new();
     // msg len
     buf.write_u32(13);
@@ -395,7 +395,7 @@ impl Peer {
     }
 }
 
-pub fn parse_peer_msg(buf: &[u8]) {
+pub fn parse_peer_msg(buf: &[u8]) -> Option<PeerMessage> {
     // get size
     let msg_size = get_u32_at(buf, 0);
 
@@ -415,18 +415,23 @@ pub fn parse_peer_msg(buf: &[u8]) {
     match id {
         0 => {
             println!("choke message recv");
+            Some(PeerMessage::Choke(0))
         },
         1 => {
             println!("unchoke message rcv");
+            Some(PeerMessage::Unchoke(1))
         },
         2 => {
             println!("interested message rcv");
+            Some(PeerMessage::Interested(2))
         },
         3 => {
             println!("not interested msg recv");
+            Some(PeerMessage::NotInterested(3))
         },
         4 => {
             println!("have msg recv");
+            Some(PeerMessage::Have(4, 0)) // TODO parse have piece
 
         },
         5 => {
@@ -434,24 +439,27 @@ pub fn parse_peer_msg(buf: &[u8]) {
             println!("contains {} bits of data", (msg_size - 1) * 8);
             let (bitfield, new_i) = get_n_bytes_at(&buf.to_vec(), 5, (msg_size - 1) as usize);
             print_byte_array("bitfield", &bitfield);
+            Some(PeerMessage::Bitfield(5, bitfield))
         },
         6 => {
             println!("request msg recv");
+            Some(PeerMessage::Request(6, 0, 0, 0)) // TODO parse requested piece
         },
         7 => {
             println!("piece msg recv");
+            Some(PeerMessage::Piece(7, Vec::new())) // TODO parse piece data
         },
         8 => {
             println!("cancelled msg recv");
+            Some(PeerMessage::Cancel(8))
         },
         9 => {
             println!("port msg recv");
+            Some(PeerMessage::Port(9))
         }
         _ => {
             println!("unknown message id: {}", id);
+            None
         }
-
-
     }
-
 }
