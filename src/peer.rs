@@ -188,7 +188,7 @@ pub enum PeerMessage {
     Have(usize, u32),              // id = 4, piece_index=4bytes
     Bitfield(usize, Vec<u8>),      // id = 5, bitfield
     Request(usize, u32, u32, u32), // id = 6, index=4, begin=4, length=4
-    Piece(usize, Vec<u8>),         // id = 6, vector of piece data
+    Piece(usize, u32, u32, Vec<u8>),         // id = 6, index=4, offset/begin=4, vector of piece data
     Cancel(usize),
     Port(usize),
 }
@@ -416,7 +416,7 @@ impl Peer {
                 // println!("Read {} bytes for piece", bytes_read);
                 // print_byte_array_len("piece result", &buf, bytes_read);
                 if let Some(piece_msg) = parse_peer_msg(&buf) {
-                    if let PeerMessage::Piece(_id, piece_data) = piece_msg {
+                    if let PeerMessage::Piece(_id, piece_index, piece_offset, piece_data) = piece_msg {
                         Result::Ok(piece_data)
                     } else {
                         println!("Msg recv was NOT piece, instead was: {:?}", piece_msg);
@@ -548,8 +548,10 @@ pub fn parse_peer_msg(buf: &[u8]) -> Option<PeerMessage> {
         7 => {
             println!("piece msg recv");
             println!("msg size: {}", msg_size);
-            let (data, _new_i) = get_n_bytes_at(&buf.to_vec(), 5, (msg_size - 1) as usize);
-            Some(PeerMessage::Piece(7, data))
+            let piece_index = get_u32_at(&buf, 5);
+            let piece_offset = get_u32_at(&buf, 9);
+            let data = get_bytes_til_end(&buf, 13);
+            Some(PeerMessage::Piece(7, piece_index, piece_offset, data))
         }
         8 => {
             println!("cancelled msg recv");
@@ -577,10 +579,15 @@ mod test {
         assert!(result.is_some());
         let msg = result.unwrap();
         match msg {
-            PeerMessage::Piece(id, data) => {
+            PeerMessage::Piece(id, piece_index, piece_offset, data) => {
+                println!("piece index is: {}, offset is: {}", piece_index, piece_offset);
+                assert_eq!(piece_index, 0);
+                assert_eq!(piece_offset,15360); // validate this is correct
+
                 print_byte_array("data", &data);
                 println!("data is {} bytes", data.len());
-                assert!(!data.is_empty())
+                assert!(!data.is_empty());
+                assert_eq!(data.len(), 512);
             },
             _ => {
                 panic!("Should have been a piece message");

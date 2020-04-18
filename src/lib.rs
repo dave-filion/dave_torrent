@@ -147,6 +147,17 @@ pub fn get_u32_at(from: &[u8], index: usize) -> u32 {
     BigEndian::read_u32(&buf)
 }
 
+// reads bytes until end reached
+pub fn get_bytes_til_end(buf: &[u8], start_i: usize) -> Vec<u8> {
+    let mut v = Vec::new();
+
+    for i in start_i.. buf.len()  {
+        let byte = buf.get(i).expect("Array index error");
+        v.push(byte.clone());
+    }
+
+    v
+}
 
 
 // reads n bytes from buf at index and returns vec, returns new index also
@@ -407,6 +418,19 @@ mod test {
             }
         }
 
+    }
+
+    #[test]
+    fn test_get_bytes_til_end() {
+        let buf =             [
+            0x2D, 0x54, 0x52, 0x32, 0x39, 0x34, 0x30, 0x2D, 0x74, 0x65, 0x6A, 0x63, 0x67, 0x6D,
+            0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F
+        ];
+
+        let end_bytes = get_bytes_til_end(&buf, 14);
+        print_byte_array("result", &end_bytes);
+        assert_eq!(end_bytes.len(), 6);
+        assert_eq!(end_bytes, [0x32, 0x6E, 0x74, 0x78, 0x74, 0x6F].to_vec());
     }
 
 
