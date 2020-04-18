@@ -3,9 +3,9 @@ use std::io::{Cursor, Read, Write};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
+use failure::{Error, err_msg};
 
 use crate::*;
 
@@ -107,8 +107,7 @@ pub fn perform_announce(
     loop {
 
         if attempt > max_attempts {
-            println!("max attempts reached. quitting");
-            return Err(Error)
+            return Err(err_msg("max attempts reached. quitting"));
         }
         println!("> Perform announce attempt ({}):", attempt);
 
@@ -138,8 +137,6 @@ pub fn perform_announce(
             }
         }
     }
-
-
 }
 
 pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {

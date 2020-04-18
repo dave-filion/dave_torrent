@@ -7,6 +7,7 @@ use std::net::UdpSocket;
 use std::time::Duration;
 use std::thread;
 use std::sync::mpsc::channel;
+use failure::Error;
 
 use dave_torrent::announce::*;
 use dave_torrent::download::{make_work_queue, Block};
@@ -25,7 +26,7 @@ fn get_torrent_size(t: &Torrent) -> i64 {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Error>{
     //*
     // OPEN TORRENT
     let filepath = "big-buck-bunny.torrent";
@@ -88,11 +89,7 @@ fn main() {
     }
 
     // send request packet and return connection id
-    let conn_id_bytes = if let Ok(conn_id) = perform_connection(&sock) {
-        conn_id
-    } else {
-        panic!("Error send/recv connection request");
-    };
+    let conn_id_bytes = perform_connection(&sock)?;
 
     // generate persistent peer id and tx id
     let peer_id = rand::thread_rng().gen::<[u8; 20]>();
@@ -100,7 +97,7 @@ fn main() {
 
     //*
     // SEND ANNOUNCE REQUEST
-    let announce_resp = if let Ok(resp) = perform_announce(
+    let announce_resp = perform_announce(
         &sock,
         &conn_id_bytes,
         &info_hash_bytes,
@@ -108,11 +105,7 @@ fn main() {
         34264,
         &peer_id,
         &tx_id,
-    ) {
-        resp
-    } else {
-        panic!("Error send/recv announce request");
-    };
+    )?;
 
     // check that tx id is the same
     let tx_id_int = BigEndian::read_u32(&tx_id);
@@ -161,7 +154,7 @@ fn main() {
     //*
     // ATTEMPT CONNECTING TO EACH PEER SERIALLY
     for (ip, port) in &peer_addrs {
-        match attempt_peer_download(
+        if let Err(e) = attempt_peer_download(
             ip.clone(),
             port.clone(),
             &info_hash_array,
@@ -169,8 +162,7 @@ fn main() {
             &mut work_queue,
             tx.clone(),
         ) {
-            Ok(()) => println!("peer connection ended successfully"),
-            Err(_e) => println!("Error attempting download from peer"),
+            println!("Couldn't download from peer.");
         }
     }
 
@@ -179,6 +171,7 @@ fn main() {
     block_proc_handle.join().unwrap();
 
     println!("DONE");
+    Ok(())
 }
 
 #[cfg(test)]

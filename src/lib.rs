@@ -3,10 +3,10 @@ use std::io::{Cursor};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::str::from_utf8;
 use std::time::Duration;
+use failure::{Error, err_msg};
 
 pub mod download;
 pub mod peer;
@@ -99,8 +99,7 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
 
     loop {
         if attempt > max_attempts {
-            println!("Max attempts reached... quitting");
-            return Err(Error)
+            return Err(err_msg("Max attempts reached... quitting"));
         }
 
         println!("> Perform connection attempt ({}):", attempt);
