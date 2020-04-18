@@ -17,7 +17,8 @@ impl WorkChunk {
     }
 }
 
-pub fn make_work_queue(num_pieces: u32, piece_size: u32, chunk_size: u32) -> VecDeque<WorkChunk> {
+pub fn make_work_queue(num_pieces: usize, piece_size: i64, chunk_size: i64) -> VecDeque<WorkChunk> {
+    println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
     let mut queue = VecDeque::new();
 
     // seperate pieces into chunks
@@ -29,16 +30,16 @@ pub fn make_work_queue(num_pieces: u32, piece_size: u32, chunk_size: u32) -> Vec
             } else if i + chunk_size > piece_size {
                 let len = piece_size - i;
                 queue.push_back(WorkChunk{
-                    piece_index,
-                    begin_index: i,
-                    length: len,
+                    piece_index: piece_index as u32,
+                    begin_index: i as u32,
+                    length: len as u32,
                 });
                 break
             } else {
                 queue.push_back(WorkChunk{
-                    piece_index,
-                    begin_index: i,
-                    length: chunk_size,
+                    piece_index: piece_index as u32,
+                    begin_index: i as u32,
+                    length: chunk_size as u32,
                 });
 
                 i += chunk_size;

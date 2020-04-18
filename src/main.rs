@@ -6,9 +6,10 @@ use lava_torrent::torrent::v1::Torrent;
 use std::net::UdpSocket;
 use std::time::Duration;
 
-use dave_torrent::*;
-use dave_torrent::peer::*;
 use dave_torrent::announce::*;
+use dave_torrent::download::make_work_queue;
+use dave_torrent::peer::*;
+use dave_torrent::*;
 
 fn get_torrent_size(t: &Torrent) -> i64 {
     // calculate how many files and total torrent size
@@ -22,7 +23,8 @@ fn get_torrent_size(t: &Torrent) -> i64 {
 }
 
 fn main() {
-    // load torrent file data
+    //*
+    // OPEN TORRENT
     let filepath = "big-buck-bunny.torrent";
 
     let torrent = Torrent::read_from_file(filepath).unwrap();
@@ -48,6 +50,8 @@ fn main() {
     println!("announce url: {}", announce_url);
     println!("------------------------------------\n");
 
+    //*
+    // CONNECT TO TRACKER
     println!("Connecting to tracker");
     // // bind socket to local port
     let local_address = "0.0.0.0:34254";
@@ -72,10 +76,9 @@ fn main() {
     print_byte_array("peer id:", &peer_id);
 
     let tx_id = rand::thread_rng().gen::<[u8; 4]>();
-    //print_byte_array("peer_id", &peer_id);
-    //print_byte_array("tx_id", &tx_id);
 
-    // send announce request
+    //*
+    // SEND ANNOUNCE REQUEST
     let announce_resp = send_announce_req(
         &sock,
         &conn_id_bytes,
@@ -88,12 +91,12 @@ fn main() {
     println!("Got announce result: {:?}", announce_resp);
     // check that tx id is the same
     let tx_id_int = BigEndian::read_u32(&tx_id);
-    println!(
-        "compare tx ids:\nsent: {:?}\nrecv: {:?}",
-        tx_id_int, announce_resp.transaction_id
-    );
+    if tx_id_int != announce_resp.transaction_id {
+        panic!("TX id did not equal announce response, quitting");
+    }
 
-    // get list of peers
+    //*
+    // GET PEER LIST
     let peer_addrs = announce_resp.addresses;
     println!("List of {} peers:", peer_addrs.len());
     for p in &peer_addrs {
@@ -101,46 +104,24 @@ fn main() {
         println!("-> {:?}:{:?}", addr, port);
     }
 
-    // TODO abstract this into library
-    // try connecting to all peers serially
+    //*
+    // GENERATE WORK QUEUE
+    let chunk_size = 512;
+    let mut work_queue = make_work_queue(torrent.pieces.len(), torrent.piece_length, chunk_size);
+
+    //*
+    // ATTEMPT CONNECTING TO EACH PEER SERIALLY
     for (ip, port) in &peer_addrs {
-        println!("\n---------------------\n");
-        println!("Connecting to peer: {:?}:{}", ip, port);
-        let peer_result = Peer::new(
+        match attempt_peer_download(
             ip.clone(),
             port.clone(),
-            info_hash_array.clone(),
-            peer_id.clone(),
-        );
-
-        if let Err(_e) = peer_result {
-            println!("Error connecting to peer, trying next peer");
-            continue
+            &info_hash_array,
+            &peer_id,
+            &mut work_queue,
+        ) {
+            Ok(()) => println!("peer connection ended successfully"),
+            Err(_e) => println!("Error attempting download from peer"),
         }
-
-        let mut peer = peer_result.unwrap();
-
-        let handshake_result = peer.perform_handshake();
-        if let Err(_e) = handshake_result {
-            println!("Error performing handshake, trying next peer");
-            continue
-        }
-
-        // actually not garbage, is bitfield
-        peer.recv_garbage();
-
-        peer.send_interested();
-
-        if peer.recv_choke() {
-            let piece_index = 0;
-            let begin = 0;
-            let len = 512; // 512 byte slice
-            println!("peer unchoked, requesting piece {} | begin {} | len: {}", piece_index, begin, len);
-            peer.request_piece(piece_index, begin, len);
-        } else {
-            println!("Couldnt unchoke peer, trying next");
-        }
-
     }
 }
 
