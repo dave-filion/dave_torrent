@@ -52,34 +52,52 @@ fn main() {
 
     //*
     // CONNECT TO TRACKER
-    println!("Connecting to tracker");
     // // bind socket to local port
     let local_address = "0.0.0.0:34254";
     let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
     println!("udp socket bound to local port: {:?}", sock);
 
-    // set rw timemout on sock (5 sec timeout)
-    sock.set_write_timeout(Some(Duration::from_secs(5)));
-    sock.set_read_timeout(Some(Duration::from_secs(5)));
+    // set rw timemout on sock
+    sock.set_write_timeout(Some(Duration::from_secs(2)));
+    sock.set_read_timeout(Some(Duration::from_secs(2)));
 
-    // connect to remote addr
+    // connect to remote addr (retry on fail)
+    print!("Connecting to tracker...");
     let remote_addr = get_socket_addr(announce_url.as_str());
-    sock.connect(remote_addr).expect("couldnt connect");
-    println!("socket connected to remote addr = {:?}", sock);
+
+    // TODO move to function
+    let max_attempts = 5;
+    let mut attempt = 1;
+    loop {
+        print!("({}) ...", attempt);
+        match sock.connect(remote_addr) {
+            Ok(_) => {
+                println!("connected!");
+                break;
+            },
+            Err(e) => print!("{:?}... trying again...", e),
+        }
+        attempt += 1;
+        if attempt > max_attempts {
+            println!("max attempts reached, quitting");
+            panic!();
+        }
+    }
 
     // send request packet and return connection id
-    let conn_id_bytes = send_connect_req(&sock);
-    print_byte_array("conn id", &conn_id_bytes);
+    let conn_id_bytes = if let Ok(conn_id) = perform_connection(&sock) {
+        conn_id
+    } else {
+        panic!("Error send/recv connection request");
+    };
 
     // generate persistent peer id and tx id
     let peer_id = rand::thread_rng().gen::<[u8; 20]>();
-    print_byte_array("peer id:", &peer_id);
-
     let tx_id = rand::thread_rng().gen::<[u8; 4]>();
 
     //*
     // SEND ANNOUNCE REQUEST
-    let announce_resp = send_announce_req(
+    let announce_resp = if let Ok(resp) = perform_announce(
         &sock,
         &conn_id_bytes,
         &info_hash_bytes,
@@ -87,8 +105,12 @@ fn main() {
         34264,
         &peer_id,
         &tx_id,
-    );
-    println!("Got announce result: {:?}", announce_resp);
+    ) {
+        resp
+    } else {
+        panic!("Error send/recv announce request");
+    };
+
     // check that tx id is the same
     let tx_id_int = BigEndian::read_u32(&tx_id);
     if tx_id_int != announce_resp.transaction_id {

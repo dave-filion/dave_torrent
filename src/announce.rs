@@ -71,7 +71,6 @@ pub fn make_announce_packet(
 
     // key (4 bytes, random)
     let key = rand::thread_rng().gen::<[u8; 4]>();
-    print_byte_array("key", &key);
     buf.write_bytes(&key);
 
     // num_want (4 bytes, -1 is default)
@@ -84,7 +83,7 @@ pub fn make_announce_packet(
 }
 
 
-pub fn send_announce_req(
+pub fn perform_announce(
     sock: &UdpSocket,
     conn_id_bytes: &Vec<u8>,
     info_hash_bytes: &Vec<u8>,
@@ -92,7 +91,7 @@ pub fn send_announce_req(
     port: u16,
     peer_id: &[u8; 20],
     tx_id: &[u8; 4],
-) -> AnnounceResponse {
+) -> Result<AnnounceResponse, Error> {
     // now send announce message and return response
     let announce_packet = make_announce_packet(
         &conn_id_bytes,
@@ -102,18 +101,45 @@ pub fn send_announce_req(
         peer_id,
         tx_id,
     );
-    //print_byte_array("Announce", &announce_packet);
 
-    let _result = sock.send(&announce_packet);
-    println!("Sent announce packet... waiting for response...");
+    let mut attempt = 1;
+    let max_attempts = 5;
+    loop {
 
-    // listen for response TODO: need to implement timeout and retry
-    let mut response_buf = [0; 512];
-    let _num_bytes = sock.recv(&mut response_buf).unwrap();
-    //print_byte_array("announce resp", &response_buf);
+        if attempt > max_attempts {
+            println!("max attempts reached. quitting");
+            return Err(Error)
+        }
+        println!("> Perform announce attempt ({}):", attempt);
 
-    // transform into announce response
-    response_buf.to_vec().into()
+        print!("Sending announce packet...");
+        match sock.send(&announce_packet) {
+            Ok(_) => {
+                println!("sent!");
+            },
+            Err(e) => {
+                println!("error {:?}", e);
+                attempt += 1;
+                continue;
+            }
+        }
+
+        print!("Waiting for announce response...");
+        let mut response_buf = [0; 512];
+        match sock.recv(&mut response_buf) {
+            Ok(bytes_read) => {
+                println!("got {} byte response", bytes_read);
+                return Ok(response_buf.to_vec().into());
+            },
+            Err(e) => {
+                println!("error {:?}",e);
+                attempt += 1;
+                continue;
+            }
+        }
+    }
+
+
 }
 
 pub fn parse_announce_response(resp: &Vec<u8>) -> AnnounceResponse {

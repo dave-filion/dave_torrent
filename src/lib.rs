@@ -88,23 +88,51 @@ pub fn get_socket_addr(announce_url: &str) -> SocketAddr {
     url.to_socket_addrs().unwrap().next().unwrap()
 }
 
-pub fn send_connect_req(sock: &UdpSocket) -> Vec<u8> {
+// Tries to send connect request and receive response back, returns connection id bytes
+pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
     let connect_packet = make_connect_packet();
     //print_byte_array("Connect request", &connect_packet);
 
-    // send message to remote udp port
-    let _result = sock.send(&connect_packet);
-    println!("Send conn req... waiting for response...");
+    let max_attempts = 5;
+    let mut attempt = 1;
 
-    // TODO: retry logic
-    // listen for response
-    let mut response_buf = [0; 16];
-    let _num_bytes = sock.recv(&mut response_buf).expect("Didnt recieve data");
-    //print_byte_array("Response", &response_buf);
+    loop {
+        if attempt > max_attempts {
+            println!("Max attempts reached... quitting");
+            return Err(Error)
+        }
 
-    // extract conn id
-    let (_conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
-    conn_id_bytes
+        println!("> Perform connection attempt ({}):", attempt);
+
+        print!("Sending connect request...");
+        // send message to remote udp port
+        match sock.send(&connect_packet) {
+            Ok(_) => {
+                println!("sent!");
+            },
+            Err(e) => {
+                println!("Error sending conn request: {:?}", e);
+                attempt += 1; // try again
+                continue;
+            }
+        }
+
+        print!("Waiting for response...");
+        let mut response_buf = [0; 16];
+        match sock.recv(&mut response_buf) {
+            Ok(bytes_read) => {
+                println!("got {} byte response!", bytes_read);
+                // extract conn id
+                let (_conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
+                return Ok(conn_id_bytes)
+            },
+            Err(e) => {
+                println!("Error recv response: {:?}", e);
+                attempt += 1; // try again
+                continue
+            }
+        }
+    }
 }
 
 pub fn get_u32_at(from: &[u8], index: usize) -> u32 {
