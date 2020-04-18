@@ -99,6 +99,7 @@ pub fn parse_handshake_response(buf: &Vec<u8>) -> HandshakeResponse {
 // piece: <len=0009+X><id=7><index><begin><block>
 // cancel: <len=0013><id=8><index><begin><length>
 // port: <len=0003><id=9><listen-port>
+#[derive(Debug)]
 pub enum PeerMessage {
     KeepAlive,
     Choke(usize),             // id = 0
@@ -311,7 +312,8 @@ impl Peer {
     }
 
     // sends request to peer for piece_index, with offset begin and length len
-    pub fn request_piece(&mut self, piece: u32, begin: u32, len: u32) {
+    // returns result with piece data, or error
+    pub fn request_piece(&mut self, piece: u32, begin: u32, len: u32) -> Result<Vec<u8>, Error> {
         println!("Sending request message for piece: {}, begin: {}, len: {}", piece, begin, len);
         let req = make_request_msg(piece, begin, len);
         self.stream.write_all(&req).expect("Write request failed");
@@ -325,10 +327,21 @@ impl Peer {
             Ok(bytes_read) => {
                 println!("Read {} bytes for piece", bytes_read);
                 print_byte_array_len("piece result", &buf, bytes_read);
-                parse_peer_msg(&buf);
+                if let Some(piece_msg) = parse_peer_msg(&buf) {
+                    if let PeerMessage::Piece(_id, piece_data) = piece_msg {
+                        Result::Ok(piece_data)
+                    } else {
+                        println!("Msg recv was NOT piece, instead was: {:?}", piece_msg);
+                        Result::Err(Error)
+                    }
+                } else {
+                    println!("no peerMsg could be parsed");
+                    Result::Err(Error)
+                }
             },
             Err(e) => {
                 println!("error reading piece after request {:?}", e);
+                Result::Err(Error)
             }
         }
 
