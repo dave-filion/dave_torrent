@@ -4,11 +4,12 @@ use std::thread;
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use std::fmt::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::str::from_utf8;
 use std::time::Duration;
 use std::sync::mpsc::{channel, Sender};
+use failure::Error;
+use failure::err_msg;
 
 use crate::download::{WorkChunk, Block};
 use crate::*;
@@ -33,13 +34,13 @@ pub fn attempt_peer_download(
     );
 
     if let Err(e) = peer_result {
-        return Result::Err(Error);
+        return Err(err_msg(e));
     }
 
     let mut peer = peer_result.unwrap();
     let handshake_result = peer.perform_handshake();
     if let Err(e) = handshake_result {
-        return Result::Err(Error);
+        return Result::Err(err_msg(e));
     }
 
     // actually not garbage, is bitfield
@@ -87,8 +88,7 @@ pub fn attempt_peer_download(
         // at this point, the connection ended successfully
         return Result::Ok(());
     } else {
-        println!("Couldnt unchoke peer, trying next");
-        return Result::Err(Error);
+        return Result::Err(err_msg("Couldnt unchoke peer"));
     }
 }
 
@@ -103,7 +103,7 @@ pub fn connect_to_peer(ip: IpAddr, port: u16) -> Result<TcpStream, Error> {
             .expect("cant set stream to blocking");
         Result::Ok(stream)
     } else {
-        Result::Err(Error)
+        Result::Err(err_msg("Can't connect to peer"))
     }
 }
 
@@ -299,7 +299,7 @@ impl Peer {
                 peer_id,
             })
         } else {
-            Result::Err(Error)
+            Result::Err(err_msg("Cant connect to peer"))
         }
     }
 
@@ -439,12 +439,10 @@ impl Peer {
                         println!("current data size is {}", all_data.len());
 
                     } else {
-                        println!("Peer message was not a piece msg as expected! returning error");
-                        return Err(Error)
+                        return Err(err_msg("Peer message was not a piece msg as expected! returning error"));
                     }
                 } else {
-                    println!("Failed to parse peer message, returning error");
-                    return Err(Error)
+                    return Err(err_msg("Failed to parse peer message, returning error"));
                 }
             } else {
                 // second or more reads, append data to buffer
@@ -491,27 +489,21 @@ impl Peer {
 
                 // verify response is accurate
                 if handshake_response.protocol != "BitTorrent protocol" {
-                    println!("Handshake protocol incorrect: {}", handshake_response.protocol);
-                    return Result::Err(Error);
+                    return Err(err_msg(format!("Handshake protocol incorrect: {}", handshake_response.protocol)));
                 }
 
                 if handshake_response.info_hash != self.info_hash {
-                    println!("Handshake Info hashes dont match!");
-                    return Result::Err(Error);
+                    return Err(err_msg("Handshake Info hashes dont match!"));
                 }
 
                 // handshake is fine, start listening for have message
                 println!("success!");
-
-                Result::Ok(())
+                Ok(())
             } else {
-                println!("handshake response failure.");
-
-                Result::Err(Error)
+                Err(err_msg("handshake response failure."))
             }
         } else {
-            println!("handshake request failure.");
-            Result::Err(Error)
+            Err(err_msg("handshake request failure."))
         }
     }
 }
