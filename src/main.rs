@@ -10,7 +10,8 @@ use std::sync::mpsc::channel;
 use failure::Error;
 
 use dave_torrent::announce::*;
-use dave_torrent::download::{make_work_queue, Block};
+use dave_torrent::download::{Block};
+use dave_torrent::pieces::*;
 use dave_torrent::peer::*;
 use dave_torrent::*;
 
@@ -43,7 +44,7 @@ fn main() -> Result<(), Error>{
 
     let total_size = get_torrent_size(&torrent);
     let piece_size = torrent.piece_length;
-    let announce_url = torrent.announce.expect("Need announce");
+    let announce_url = torrent.announce.as_ref().expect("Need announce");
 
     println!("TORRENT INFO");
     println!("------------------------------------");
@@ -123,12 +124,9 @@ fn main() -> Result<(), Error>{
     }
 
     //*
-    // GENERATE WORK QUEUE
-    let chunk_size = BLOCK_SIZE;
-    let mut work_queue = make_work_queue(
-        torrent.pieces.len(),
-        torrent.piece_length as u32,
-        chunk_size);
+    // GENERATE PIECE MANAGER AND WORK QUE
+    let piece_man = PieceManager::init_from_torrent(&torrent);
+    let mut work_queue = piece_man.init_work_queue();
 
     //*
     // START PROCESSING THREAD AND MAKE CHANNELS
@@ -140,8 +138,7 @@ fn main() -> Result<(), Error>{
             println!("Waiting for incoming blocks...");
             match rx.recv() {
                 Ok(block) => {
-                    println!("Recv block: {} for processing", block.block_id)
-                    // TODO actually do something with block
+                    piece_man.add_block(block);
                 },
                 Err(e) => {
                     println!("Recv Error: {:?}. Breaking", e);

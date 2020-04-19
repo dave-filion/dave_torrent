@@ -40,8 +40,19 @@ mod test {
         let piece_size = 14;
         let chunk_size = 3;
 
-        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
-        let mut q = piece_manager.make_work_queue();
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.init_work_queue();
+
+        // check piece_manager internals
+        assert_eq!(piece_manager.expected_block_ids.len(), 4);
+        assert_eq!(piece_manager.expected_block_ids.get(&3).unwrap().len(), 4);
+
+        println!("piece_map: {:?}", piece_manager.piece_map);
+        assert_eq!(piece_manager.piece_map.keys().len(), 4);
+
+        println!("current block ids: {:?}", piece_manager.current_block_ids);
+        assert_eq!(piece_manager.current_block_ids.keys().len(), 4);
+
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 20);
 
@@ -55,8 +66,8 @@ mod test {
         let piece_size = 9;
         let chunk_size = 3;
 
-        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
-        let mut q = piece_manager.make_work_queue();
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.init_work_queue();
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 12);
 
@@ -70,8 +81,8 @@ mod test {
         let piece_size = 262144;
         let num_pieces = 1055;
         let chunk_size = BLOCK_SIZE;
-        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
-        let mut q = piece_manager.make_work_queue();
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.init_work_queue();
         println!("{} chunks", q.len());
 
         let first_work = q.pop_front().unwrap();
