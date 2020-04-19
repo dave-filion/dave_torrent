@@ -613,7 +613,7 @@ mod test {
             0x1, 0x0, 0x0, 0x3, 0xE8, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x17, 0x70, 0x0, 0x0, 0x0,
         ];
         let result = parse_peer_msg(&buf);
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let msg = result.unwrap();
         match msg {
             PeerMessage::Piece(id, piece_index, piece_offset, data) => {

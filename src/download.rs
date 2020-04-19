@@ -27,46 +27,12 @@ pub struct Block {
     pub block_id: u32,
 }
 
-pub fn make_work_queue(num_pieces: usize, piece_size: u32, chunk_size: u32) -> VecDeque<WorkChunk> {
-    println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
-    let mut queue = VecDeque::new();
-
-    // seperate pieces into chunks
-    for piece_index in 0..num_pieces {
-        let mut i = 0;
-        let mut block_id = 0;
-        loop {
-            if i == piece_size {
-                break
-            } else if i + chunk_size > piece_size {
-                let len = piece_size - i;
-                queue.push_back(WorkChunk{
-                    piece_index: piece_index as u32,
-                    begin_index: i as u32,
-                    length: len as u32,
-                    block_id,
-                });
-                break
-            } else {
-                queue.push_back(WorkChunk{
-                    piece_index: piece_index as u32,
-                    begin_index: i as u32,
-                    length: chunk_size as u32,
-                    block_id,
-                });
-
-                i += chunk_size;
-                block_id += 1;
-            }
-        }
-    }
-    queue
-}
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::BLOCK_SIZE;
+    use crate::pieces::PieceManager;
 
     #[test]
     fn test_make_work_queue() {
@@ -74,7 +40,8 @@ mod test {
         let piece_size = 14;
         let chunk_size = 3;
 
-        let mut q = make_work_queue(num_pieces, piece_size, chunk_size);
+        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.make_work_queue();
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 20);
 
@@ -88,7 +55,8 @@ mod test {
         let piece_size = 9;
         let chunk_size = 3;
 
-        let mut q = make_work_queue(num_pieces, piece_size, chunk_size);
+        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.make_work_queue();
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 12);
 
@@ -102,7 +70,8 @@ mod test {
         let piece_size = 262144;
         let num_pieces = 1055;
         let chunk_size = BLOCK_SIZE;
-        let mut q = make_work_queue(num_pieces, piece_size, chunk_size);
+        let piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut q = piece_manager.make_work_queue();
         println!("{} chunks", q.len());
 
         let first_work = q.pop_front().unwrap();
