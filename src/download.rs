@@ -53,6 +53,18 @@ mod test {
         println!("current block ids: {:?}", piece_manager.current_block_ids);
         assert_eq!(piece_manager.current_block_ids.keys().len(), 4);
 
+        // try adding block
+        let b = Block {
+            data: vec![0, 1, 2, 3],
+            piece_index: 0,
+            offset: 0,
+            block_id: 0,
+        };
+        piece_manager.add_block(b);
+        // look at internals
+        println!("piece_map: {:?}", piece_manager.piece_map);
+        println!("current block ids: {:?}", piece_manager.current_block_ids);
+
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 20);
 
@@ -90,5 +102,7 @@ mod test {
 
         let second = q.pop_front().unwrap();
         println!("second = {:?}", second);
+
+
     }
 }

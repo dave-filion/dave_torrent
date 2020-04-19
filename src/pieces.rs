@@ -9,9 +9,9 @@ pub struct PieceManager {
     pub piece_size: i64, // size of each piece
     pub block_size: u32, // max size of blocks, should be 2^14
 
-    pub piece_map: HashMap<usize, HashMap<u32, Block>>,
-    pub current_block_ids: HashMap<usize, HashSet<u32>>,
-    pub expected_block_ids: HashMap<usize, HashSet<u32>>,
+    pub piece_map: HashMap<u32, HashMap<u32, Block>>,
+    pub current_block_ids: HashMap<u32, HashSet<u32>>,
+    pub expected_block_ids: HashMap<u32, HashSet<u32>>,
 
 
 }
@@ -43,6 +43,15 @@ impl PieceManager {
     pub fn add_block(&mut self, block: Block) {
         println!("Adding block: {}:{}", block.piece_index, block.block_id);
 
+        // add to block id set
+        self.current_block_ids.get_mut(&block.piece_index)
+            .expect("Piece missing from block ids").insert(block.block_id);
+
+        // store in piece_map
+        self.piece_map.get_mut(&block.piece_index)
+            .expect("Piece missing from piece map")
+            .insert(block.block_id, block);
+
     }
 
     pub fn init_work_queue(&mut self) -> VecDeque<WorkChunk> {
@@ -52,9 +61,9 @@ impl PieceManager {
         let chunk_size = self.block_size as u32;
 
         // initialize internal data structs
-        let mut piece_map: HashMap<usize, HashMap<u32, Block>>= HashMap::new();
-        let mut current_block_ids : HashMap<usize, HashSet<u32>>= HashMap::new();
-        let mut expected_block_ids : HashMap<usize, HashSet<u32>>= HashMap::new();
+        let mut piece_map: HashMap<u32, HashMap<u32, Block>>= HashMap::new();
+        let mut current_block_ids : HashMap<u32, HashSet<u32>>= HashMap::new();
+        let mut expected_block_ids : HashMap<u32, HashSet<u32>>= HashMap::new();
 
         println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
 
@@ -64,8 +73,8 @@ impl PieceManager {
             let mut block_id = 0;
 
             // init empty map for piece map
-            piece_map.insert(piece_index, HashMap::new());
-            current_block_ids.insert(piece_index, HashSet::new());
+            piece_map.insert(piece_index as u32, HashMap::new());
+            current_block_ids.insert(piece_index as u32, HashSet::new());
 
             let mut expected_block_id_set = HashSet::new();
 
@@ -98,7 +107,7 @@ impl PieceManager {
             }
 
             // add to map
-            expected_block_ids.insert(piece_index, expected_block_id_set);
+            expected_block_ids.insert(piece_index as u32, expected_block_id_set);
 
         }
 
