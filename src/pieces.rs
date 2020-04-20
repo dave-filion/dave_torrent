@@ -129,6 +129,8 @@ impl PieceManager {
                         length: len as u32,
                         block_id,
                     });
+                    expected_block_id_set.insert(block_id.clone());
+
                     break
                 } else {
                     queue.push_back(WorkChunk{
@@ -233,5 +235,48 @@ mod test {
         println!("piece data: {:?}", piece_data);
         assert_eq!(piece_data.id, 0);
         assert_eq!(piece_data.data.len(), 10);
+    }
+
+    #[test]
+    fn test_assemble_piece_with_odd_block_size() {
+        let num_pieces = 2;
+        let piece_size = 12;
+        let block_size = 5;
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size);
+        let wq = pm.init_work_queue();
+
+        assert_eq!(pm.expected_block_ids.get(&0).unwrap().len(), 3); // should be 3 expected blocks, 2 5's and 1 2
+        println!("wq => {:?}", wq);
+
+        println!("pm => {:?}", pm);
+        let block1 = Block{
+            data: vec![0,1,2,3,4],
+            piece_index: 0,
+            offset: 0,
+            block_id: 0
+        };
+        pm.add_block(block1);
+
+        let block2 = Block{
+            data: vec![5,6,7,8,9],
+            piece_index: 0,
+            offset: 5,
+            block_id: 1
+        };
+        pm.add_block(block2);
+
+        let block3 = Block{
+            data: vec![0x11, 0x12],
+            piece_index: 0,
+            offset: 10,
+            block_id: 2
+        };
+        pm.add_block(block3);
+
+        // try assembling piece 0
+        let piece_data = pm.assemble_piece(0);
+        println!("piece data: {:?}", piece_data);
+        assert_eq!(piece_data.id, 0);
+        assert_eq!(piece_data.data.len(), 12);
     }
 }
