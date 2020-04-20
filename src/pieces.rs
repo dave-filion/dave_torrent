@@ -5,7 +5,14 @@ use crate::download::{WorkChunk, Block};
 use failure::_core::str::from_utf8;
 use bytebuffer::ByteBuffer;
 
+#[derive(Debug)]
+pub struct PieceData {
+    pub id: u32,
+    pub data: Vec<u8>,
+}
+
 // handles dealing with blocks into pieces
+#[derive(Debug)]
 pub struct PieceManager {
     pub num_pieces: usize, // total pieces in torrent
     pub piece_size: i64, // size of each piece
@@ -16,12 +23,20 @@ pub struct PieceManager {
     pub expected_block_ids: HashMap<u32, HashSet<u32>>,
 
     pub piece_hashes: HashMap<u32, [u8; 20]>,
+    pub finished_pieces: HashMap<u32, PieceData>,
 
+}
+
+fn init_finished_pieces(n: usize) -> HashMap<u32, PieceData> {
+    // init finished pieces map with optionals
+    let mut fp = HashMap::new();
+    fp
 }
 
 impl PieceManager {
     // dont use this, use init from torrent instead
     pub fn new(num_pieces: usize, piece_size: i64, block_size: u32) -> Self {
+
         PieceManager{
             num_pieces,
             piece_size,
@@ -30,6 +45,7 @@ impl PieceManager {
             current_block_ids: HashMap::new(),
             expected_block_ids: HashMap::new(),
             piece_hashes: HashMap::new(),
+            finished_pieces: init_finished_pieces(num_pieces),
         }
     }
 
@@ -50,15 +66,17 @@ impl PieceManager {
         // println!("piece hashes: {:?}", piece_hashes);
         // let size = std::mem::size_of_val(&piece_hashes);
         // println!("piece hashes is {} bytes", size);
+        let np = t.pieces.len().clone();
 
         PieceManager {
-            num_pieces: t.pieces.len().clone(),
+            num_pieces: np,
             piece_size: t.piece_length.clone(),
             block_size: BLOCK_SIZE,
             piece_map: HashMap::new(),
             current_block_ids: HashMap::new(),
             expected_block_ids: HashMap::new(),
             piece_hashes,
+            finished_pieces: init_finished_pieces(np),
         }
     }
 
@@ -141,7 +159,7 @@ impl PieceManager {
     }
 
     // assemble a piece from blocks and check its hash
-    pub fn assemble_piece(&mut self, piece_id: u32) -> Vec<u8> {
+    pub fn assemble_piece(&mut self, piece_id: u32) -> PieceData {
         println!("Trying to assemble piece: {}",piece_id);
 
         let mut data = ByteBuffer::new();
@@ -160,7 +178,10 @@ impl PieceManager {
             println!("wrote block {} data to buffer, new size: {}", b_id, data.len());
         }
 
-        data.to_bytes()
+        PieceData {
+            id: piece_id,
+            data: data.to_bytes()
+        }
     }
 }
 
@@ -180,5 +201,37 @@ mod test {
         let other_hash = piece_man.piece_hashes.get(&1046).unwrap();
 
         assert_eq!(piece_hash, *other_hash);
+    }
+
+    #[test]
+    fn test_assemble_piece() {
+        let num_pieces = 3;
+        let piece_size = 10;
+        let block_size = 5;
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size);
+        let wq = pm.init_work_queue();
+
+        println!("pm => {:?}", pm);
+        let block1 = Block{
+            data: vec![0,1,2,3,4],
+            piece_index: 0,
+            offset: 0,
+            block_id: 0
+        };
+        pm.add_block(block1);
+
+        let block2 = Block{
+            data: vec![5,6,7,8,9],
+            piece_index: 0,
+            offset: 5,
+            block_id: 1
+        };
+        pm.add_block(block2);
+
+        // try assembling piece 0
+        let piece_data = pm.assemble_piece(0);
+        println!("piece data: {:?}", piece_data);
+        assert_eq!(piece_data.id, 0);
+        assert_eq!(piece_data.data.len(), 10);
     }
 }
