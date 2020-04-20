@@ -1,7 +1,8 @@
 use lava_torrent::torrent::v1::Torrent;
-use crate::BLOCK_SIZE;
+use crate::{BLOCK_SIZE, print_byte_array};
 use std::collections::{VecDeque, HashMap, HashSet};
 use crate::download::{WorkChunk, Block};
+use failure::_core::str::from_utf8;
 
 // handles dealing with blocks into pieces
 pub struct PieceManager {
@@ -13,6 +14,7 @@ pub struct PieceManager {
     pub current_block_ids: HashMap<u32, HashSet<u32>>,
     pub expected_block_ids: HashMap<u32, HashSet<u32>>,
 
+    pub piece_hashes: HashMap<u32, [u8; 20]>,
 
 }
 
@@ -26,17 +28,36 @@ impl PieceManager {
             piece_map: HashMap::new(),
             current_block_ids: HashMap::new(),
             expected_block_ids: HashMap::new(),
+            piece_hashes: HashMap::new(),
         }
     }
 
     pub fn init_from_torrent(t: &Torrent) -> Self{
+        // create piece hash map
+        let mut piece_hashes : HashMap<u32, [u8; 20]>= HashMap::new();
+        for (i, p) in t.pieces.iter().enumerate() {
+            // print_byte_array(format!("piece: {}", i).as_str(), p);
+            // convert from vec to byte array
+            let mut ba = [0u8; 20];
+            for j in 0..20 {
+                let b = p.get(j).unwrap();
+                ba[j] = b.clone();
+            }
+            piece_hashes.insert(i.clone() as u32, ba);
+        }
+
+        // println!("piece hashes: {:?}", piece_hashes);
+        // let size = std::mem::size_of_val(&piece_hashes);
+        // println!("piece hashes is {} bytes", size);
+
         PieceManager {
             num_pieces: t.pieces.len().clone(),
             piece_size: t.piece_length.clone(),
             block_size: BLOCK_SIZE,
             piece_map: HashMap::new(),
             current_block_ids: HashMap::new(),
-            expected_block_ids: HashMap::new()
+            expected_block_ids: HashMap::new(),
+            piece_hashes,
         }
     }
 
@@ -119,3 +140,21 @@ impl PieceManager {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_init_from_torrent() {
+        let filepath = "big-buck-bunny.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+
+        let piece_man = PieceManager::init_from_torrent(&torrent);
+
+        // verify piece hash is expected
+        let piece_hash : [u8; 20] = [0x84, 0x88, 0x1D, 0x13, 0x2F, 0xB4, 0x41, 0x89, 0x1B, 0xD8, 0x7F, 0xD7, 0x6A, 0xA2, 0x28, 0x33, 0x49, 0x7F, 0x2C, 0xFA];
+        let other_hash = piece_man.piece_hashes.get(&1046).unwrap();
+
+        assert_eq!(piece_hash, *other_hash);
+    }
+}

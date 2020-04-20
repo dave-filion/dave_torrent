@@ -1,5 +1,4 @@
 use rand::Rng;
-use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
@@ -125,7 +124,7 @@ fn main() -> Result<(), Error>{
 
     //*
     // GENERATE PIECE MANAGER AND WORK QUE
-    let piece_man = PieceManager::init_from_torrent(&torrent);
+    let mut piece_man = PieceManager::init_from_torrent(&torrent);
     let mut work_queue = piece_man.init_work_queue();
 
     //*
