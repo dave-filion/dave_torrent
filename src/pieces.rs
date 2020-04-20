@@ -190,11 +190,16 @@ impl PieceManager {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::print_torrent_info;
 
     #[test]
     fn test_init_from_torrent() {
         let filepath = "big-buck-bunny.torrent";
         let torrent = Torrent::read_from_file(filepath).unwrap();
+
+        // how do files relate to pieces?
+        print_torrent_info(&torrent);
+
 
         let piece_man = PieceManager::init_from_torrent(&torrent);
 

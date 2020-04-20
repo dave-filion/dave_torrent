@@ -6,6 +6,7 @@ use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 use failure::{Error, err_msg};
+use lava_torrent::torrent::v1::Torrent;
 
 pub mod download;
 pub mod peer;
@@ -14,6 +15,23 @@ pub mod pieces;
 
 pub const BLOCK_SIZE: u32 = 16384; // 16384 (2^14) bytes is accepted block size
 
+pub fn print_torrent_info(t: &Torrent) {
+    println!("TORRENT INFO");
+    println!("------------------------------------");
+    println!("Total size = {} bytes",  t.length);
+    println!("Piece size = {} bytes", t.piece_length);
+    println!("Piece number = {}", t.pieces.len());
+    println!("info hash = {}", t.info_hash());
+    println!("announce url: {}", t.announce.as_ref().unwrap());
+    // print files
+    if t.files.is_some() {
+        println!("Files:");
+        for (i, f) in t.files.as_ref().unwrap().iter().enumerate() {
+            println!("{}: {:?} - {} bytes", i, f.path, f.length);
+        }
+    }
+    println!("------------------------------------\n");
+}
 
 pub fn print_byte_array_len(header: &str, bytes: &[u8], until: usize) {
     print!("{} => [", header);

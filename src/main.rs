@@ -45,14 +45,6 @@ fn main() -> Result<(), Error>{
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.as_ref().expect("Need announce");
 
-    println!("TORRENT INFO");
-    println!("------------------------------------");
-    println!("Total size = {} bytes", total_size);
-    println!("Piece size = {} bytes", piece_size);
-    println!("Piece number = {}", torrent.pieces.len());
-    println!("info hash = {}", info_hash);
-    println!("announce url: {}", announce_url);
-    println!("------------------------------------\n");
 
     //*
     // CONNECT TO TRACKER
