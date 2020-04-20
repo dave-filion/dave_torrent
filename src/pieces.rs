@@ -3,6 +3,7 @@ use crate::{BLOCK_SIZE, print_byte_array};
 use std::collections::{VecDeque, HashMap, HashSet};
 use crate::download::{WorkChunk, Block};
 use failure::_core::str::from_utf8;
+use bytebuffer::ByteBuffer;
 
 // handles dealing with blocks into pieces
 pub struct PieceManager {
@@ -137,6 +138,29 @@ impl PieceManager {
         self.expected_block_ids = expected_block_ids;
 
         queue
+    }
+
+    // assemble a piece from blocks and check its hash
+    pub fn assemble_piece(&mut self, piece_id: u32) -> Vec<u8> {
+        println!("Trying to assemble piece: {}",piece_id);
+
+        let mut data = ByteBuffer::new();
+
+        let blocks = self.piece_map.get(&piece_id).expect("Couldnt get blocks for piece id");
+        let block_ids = self.expected_block_ids.get(&piece_id).expect("Couldnt get expected block ids for piece");
+
+        // iterate thru block ids in order and add bytes to data buffer
+        let mut block_ids: Vec<u32> = block_ids.iter().map(|id| id.clone()).collect();
+        block_ids.sort();
+
+        for b_id in &block_ids {
+            println!("getting block data for bid: {}", b_id);
+            let block = blocks.get(b_id).unwrap();
+            data.write_bytes(&block.data);
+            println!("wrote block {} data to buffer, new size: {}", b_id, data.len());
+        }
+
+        data.to_bytes()
     }
 }
 
