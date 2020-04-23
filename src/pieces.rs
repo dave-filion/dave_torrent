@@ -4,6 +4,9 @@ use std::collections::{VecDeque, HashMap, HashSet};
 use crate::download::{WorkChunk, Block};
 use failure::_core::str::from_utf8;
 use bytebuffer::ByteBuffer;
+use std::path::Path;
+use std::fs::File;
+use std::io::prelude::*;
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -30,9 +33,13 @@ pub struct PieceManager {
 // outputs piece data to file
 pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     // make dave files (data files)
-    let filename = format!("{}/{}.dave", output_dir, piece.id);
-    println!("writing piece {} to filename: {}", piece.id, filename);
+    let p = format!("{}/{}.dave", output_dir, piece.id);
+    let path = Path::new(p.as_str());
+    println!("writing piece {} to filename: {:?}", piece.id, path);
 
+    let mut file = File::create(path).expect("Couldnt open file to write piece");
+
+    file.write_all(piece.data.as_slice());
 
 }
 
@@ -296,9 +303,15 @@ mod test {
 
     #[test]
     fn test_write_piece_to_file() {
+        let mut d = Vec::new();
+        // write 1000 bytes
+        for i in 0..100 {
+            d.push(i);
+        }
+
         let piece = PieceData{
             id: 1,
-            data: vec![]
+            data: d,
         };
         write_piece_to_file("test/output", piece);
     }
