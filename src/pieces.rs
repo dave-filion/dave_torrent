@@ -37,9 +37,15 @@ pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     let path = Path::new(p.as_str());
     println!("writing piece {} to filename: {:?}", piece.id, path);
 
-    let mut file = File::create(path).expect("Couldnt open file to write piece");
+    let mut file = match File::create(path) {
+        Ok(file) => file,
+        Err(e) => panic!("Couldnt create file: {:?}: {:?}", path, e)
+    };
 
-    file.write_all(piece.data.as_slice());
+    match file.write_all(piece.data.as_slice()) {
+        Ok(_) => println!("Wrote piece {} to file successfully", piece.id),
+        Err(e) => panic!("Error writing piece to file: {:?}", e),
+    }
 
 }
 
@@ -108,6 +114,12 @@ impl PieceManager {
             .expect("Piece missing from piece map")
             .insert(block.block_id, block);
 
+
+        if self.expected_block_ids.get(&block.piece_index) == self.current_block_ids.get(&block.piece_index) {
+            println!("We have all blocks for piece: {}", block.piece_index);
+            // TODO build piece
+
+        }
     }
 
     pub fn init_work_queue(&mut self) -> VecDeque<WorkChunk> {
