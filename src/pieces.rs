@@ -27,6 +27,7 @@ pub struct PieceManager {
 
     pub piece_hashes: HashMap<u32, [u8; 20]>,
     pub finished_pieces: HashMap<u32, PieceData>,
+    pub output_dir: String,
 
 }
 
@@ -57,7 +58,7 @@ fn init_finished_pieces(n: usize) -> HashMap<u32, PieceData> {
 
 impl PieceManager {
     // dont use this, use init from torrent instead
-    pub fn new(num_pieces: usize, piece_size: i64, block_size: u32) -> Self {
+    pub fn new(num_pieces: usize, piece_size: i64, block_size: u32, output_dir: String) -> Self {
 
         PieceManager{
             num_pieces,
@@ -68,6 +69,7 @@ impl PieceManager {
             expected_block_ids: HashMap::new(),
             piece_hashes: HashMap::new(),
             finished_pieces: init_finished_pieces(num_pieces),
+            output_dir,
         }
     }
 
@@ -90,6 +92,8 @@ impl PieceManager {
         // println!("piece hashes is {} bytes", size);
         let np = t.pieces.len().clone();
 
+        // TODO figure out output dir name based on torrent
+
         PieceManager {
             num_pieces: np,
             piece_size: t.piece_length.clone(),
@@ -99,11 +103,14 @@ impl PieceManager {
             expected_block_ids: HashMap::new(),
             piece_hashes,
             finished_pieces: init_finished_pieces(np),
+            output_dir: "test/output".to_string(),
         }
     }
 
     pub fn add_block(&mut self, block: Block) {
         println!("Adding block: {}:{}", block.piece_index, block.block_id);
+
+        let piece_index = block.piece_index.clone();
 
         // add to block id set
         self.current_block_ids.get_mut(&block.piece_index)
@@ -115,10 +122,15 @@ impl PieceManager {
             .insert(block.block_id, block);
 
 
-        if self.expected_block_ids.get(&block.piece_index) == self.current_block_ids.get(&block.piece_index) {
-            println!("We have all blocks for piece: {}", block.piece_index);
-            // TODO build piece
+        if self.expected_block_ids.get(&piece_index) == self.current_block_ids.get(&piece_index) {
+            println!("We have all blocks for piece {}, assembling...", piece_index);
+            let piece_data = self.assemble_piece(piece_index);
+            // TODO verify hash
 
+            // write to file
+            write_piece_to_file(self.output_dir.as_str(), piece_data);
+
+            // remove block data for piece and clean up
         }
     }
 
@@ -243,7 +255,7 @@ mod test {
         let num_pieces = 3;
         let piece_size = 10;
         let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size);
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output".to_string());
         let wq = pm.init_work_queue();
 
         println!("pm => {:?}", pm);
@@ -275,7 +287,7 @@ mod test {
         let num_pieces = 2;
         let piece_size = 12;
         let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size);
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output".to_string());
         let wq = pm.init_work_queue();
 
         assert_eq!(pm.expected_block_ids.get(&0).unwrap().len(), 3); // should be 3 expected blocks, 2 5's and 1 2
@@ -326,5 +338,48 @@ mod test {
             data: d,
         };
         write_piece_to_file("test/output", piece);
+    }
+
+    #[test]
+    fn test_process_piece() {
+        let b1 = Block{
+            data: vec![0x01, 0x02, 0x03, 0x04, 0x05],
+            piece_index: 0,
+            offset: 0,
+            block_id: 0
+        };
+        let b2 = Block{
+            data: vec![0x06, 0x07, 0x08, 0x09, 0x10],
+            piece_index: 0,
+            offset: 5,
+            block_id: 1
+        };
+        let b3 = Block{
+            data: vec![0x11, 0x12, 0x13, 0x14, 0x15],
+            piece_index: 0,
+            offset: 10,
+            block_id: 2
+        };
+
+        let mut piece_man = PieceManager::new(1, 15, 5, "test/output".to_string());
+        let mut workqueue = piece_man.init_work_queue();
+        println!("wq = {:?}", workqueue);
+
+        piece_man.add_block(b1);
+        piece_man.add_block(b2);
+        piece_man.add_block(b3);
+
+        // file should have been created
+        let mut data_file = File::open("test/output/0.dave").expect("Should be there");
+        let mut buf = Vec::new();
+        let bytes_read = data_file.read_to_end(&mut buf).unwrap();
+        println!("Read {} bytes from data file", bytes_read);
+        assert_eq!(bytes_read, 15);
+
+        print_byte_array("data_file", &buf);
+        assert_eq!(buf, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+
+
+
     }
 }

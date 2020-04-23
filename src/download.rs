@@ -40,7 +40,7 @@ mod test {
         let piece_size = 14;
         let chunk_size = 3;
 
-        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size, "test/output".to_string());
         let mut q = piece_manager.init_work_queue();
 
         // check piece_manager internals
@@ -78,7 +78,7 @@ mod test {
         let piece_size = 9;
         let chunk_size = 3;
 
-        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size, "test/output".to_string());
         let mut q = piece_manager.init_work_queue();
         println!("{} chunks {:?}", q.len(), q);
         assert_eq!(q.len(), 12);
@@ -93,7 +93,7 @@ mod test {
         let piece_size = 262144;
         let num_pieces = 1055;
         let chunk_size = BLOCK_SIZE;
-        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size);
+        let mut piece_manager = PieceManager::new(num_pieces, piece_size, chunk_size, "test/output".to_string());
         let mut q = piece_manager.init_work_queue();
         println!("{} chunks", q.len());
 
