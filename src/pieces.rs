@@ -27,6 +27,15 @@ pub struct PieceManager {
 
 }
 
+// outputs piece data to file
+pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
+    // make dave files (data files)
+    let filename = format!("{}/{}.dave", output_dir, piece.id);
+    println!("writing piece {} to filename: {}", piece.id, filename);
+
+
+}
+
 fn init_finished_pieces(n: usize) -> HashMap<u32, PieceData> {
     // init finished pieces map with optionals
     let mut fp = HashMap::new();
@@ -283,5 +292,14 @@ mod test {
         println!("piece data: {:?}", piece_data);
         assert_eq!(piece_data.id, 0);
         assert_eq!(piece_data.data.len(), 12);
+    }
+
+    #[test]
+    fn test_write_piece_to_file() {
+        let piece = PieceData{
+            id: 1,
+            data: vec![]
+        };
+        write_piece_to_file("test/output", piece);
     }
 }
