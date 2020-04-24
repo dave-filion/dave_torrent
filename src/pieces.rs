@@ -231,6 +231,8 @@ impl PieceManager {
 mod test {
     use super::*;
     use crate::print_torrent_info;
+    use rand::thread_rng;
+    use rand::Rng;
 
     #[test]
     fn test_init_from_torrent() {
@@ -378,7 +380,49 @@ mod test {
 
         print_byte_array("data_file", &buf);
         assert_eq!(buf, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+    }
 
+    #[test]
+    fn test_process_piece_with_larger_file() {
+        // use rand::seq::SliceRandom;
+
+        let num_blocks = 20;
+        let block_size = 100;
+
+        println!("Making {} blocks of size: {}", num_blocks, block_size);
+        let mut data_buf = ByteBuffer::new();
+        let mut blocks = Vec::new();
+
+        // make random blocks
+        let mut thread_rng = thread_rng();
+        for i in 0..num_blocks {
+            let data = thread_rng.gen::<[u8; 8]>();
+            data_buf.write_bytes(&data);
+
+            let block = Block{
+                data: data.to_vec(),
+                piece_index: 0,
+                offset: i * block_size,
+                block_id: i
+            };
+            blocks.push(block);
+        }
+
+        println!("done making blocks, shuffling and assembling");
+        // blocks.shuffle(&mut thread_rng);
+
+        // init piece manager
+        let mut pm = PieceManager::new(1, (num_blocks * block_size) as i64, block_size, "test/output".to_string());
+        let wq = pm.init_work_queue();
+        println!("Initialized work queue with {} entries", wq.len());
+
+        // add blocks to piece man
+        for block in blocks {
+            println!("adding block {}", block.block_id);
+            pm.add_block(block)
+        }
+
+        // verify piece written to file
 
 
     }
