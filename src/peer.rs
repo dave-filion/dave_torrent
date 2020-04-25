@@ -52,12 +52,12 @@ pub fn attempt_peer_download(
     peer.recv_unchoke()?;
 
     // start pulling work off work queue
-    println!("Peer unchoked...Starting to pull work off work queue");
+    println!("Peer {:?} ready for downloading", peer.ip);
     loop {
         match work_queue.pop_front() {
             Some(next_chunk) => {
-                print!(
-                    "Downloading block {}:{}...",
+                println!(
+                    "> DL {}:{}...",
                     next_chunk.piece_index, next_chunk.block_id
                 );
                 match peer.fetch_block_data(&next_chunk) {
@@ -314,7 +314,8 @@ impl Peer {
         let read_result = self.stream.read(&mut buf);
         match read_result {
             Ok(bytes_read) => {
-                print_byte_array_len("bitfield", &buf, bytes_read);
+                let header = format!("peer {:?} bitfield", self.ip);
+                print_byte_array_len(header.as_str(), &buf, bytes_read);
             }
             Err(e) => {}
         }
@@ -365,22 +366,18 @@ impl Peer {
     }
 
     pub fn send_interested(&mut self) {
-        print!("Sending interested message...");
         let msg = make_interested_msg();
         self.stream.write_all(&msg).unwrap();
-        println!("sent");
     }
 
     pub fn recv_unchoke(&mut self) -> Result<(), Error> {
         self.stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .expect("Cant set read timeout");
-        print!("Waiting for unchoke message...");
         let mut buf = [0; 512];
         let bytes_read = self.stream.read(&mut buf)?;
         match parse_peer_msg(&buf)? {
             PeerMessage::Unchoke(_) => {
-                println!("received, unchoking!");
                 self.choked = false;
                 Ok(())
             }
@@ -398,8 +395,6 @@ impl Peer {
         let piece_id = work.piece_index;
         let offset = work.begin_index;
         let length = work.length;
-
-        println!("Attempting to fetch Block: {}-{}", piece_id, block_id);
 
         // write request to stream
         let req = make_request_msg(piece_id, offset, length);
@@ -426,24 +421,12 @@ impl Peer {
                 let sliced_buf = &read_buf[..bytes_read];
                 let msg = parse_peer_msg(sliced_buf)?;
                 if let PeerMessage::Piece(msg_size, piece_id, offset, data) = msg {
-                    println!(
-                        "read #{}: {} bytes read, msg size: {}",
-                        i + 1,
-                        bytes_read,
-                        msg_size
-                    );
                     total_msg_size = msg_size as isize;
                     total_bytes_read += bytes_read as isize;
 
                     if let Some(d) = data {
-                        println!("size of data: {} bytes", d.len());
                         all_data.extend(d);
-                    } else {
-                        println!("msg had no piece data");
                     }
-
-                    println!("{} bytes remaining", total_msg_size - total_bytes_read);
-                    println!("current data size is {}", all_data.len());
                 } else {
                     return Err(err_msg(
                         "Peer message was not a piece msg as expected! returning error",
@@ -451,23 +434,14 @@ impl Peer {
                 }
             } else {
                 // second or more reads, append data to buffer
-                println!("read #{}: {} bytes read", i + 1, bytes_read);
                 total_bytes_read += bytes_read as isize;
                 let remaining_to_read = total_msg_size - total_bytes_read;
-                println!("{} bytes remaining", remaining_to_read);
 
                 // append data
                 let sliced_buf = &read_buf[..bytes_read];
                 all_data.extend_from_slice(sliced_buf);
-
-                println!("current data size is: {}", all_data.len());
-
                 if remaining_to_read <= 0 {
-                    println!("0 bytes remaining to read, returning");
-                    println!("final data size is: {}", all_data.len());
                     return Ok(all_data);
-                } else {
-                    println!("still more bytes to go! will read again in a sec");
                 }
             }
             // wait a sec then read again
@@ -477,7 +451,6 @@ impl Peer {
     }
 
     pub fn perform_handshake(&mut self) -> Result<(), Error> {
-        print!("performing handshake...");
         let handshake = make_handshake(&self.peer_id, &self.info_hash);
 
         // write handshake to stream
@@ -505,7 +478,6 @@ impl Peer {
                 }
 
                 // handshake is fine, start listening for have message
-                println!("success!");
                 Ok(())
             } else {
                 Err(err_msg("handshake response failure."))

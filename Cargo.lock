@@ -114,6 +114,7 @@ dependencies = [
  "failure",
  "lava_torrent",
  "rand",
+ "sha-1",
 ]
 
 [[package]]

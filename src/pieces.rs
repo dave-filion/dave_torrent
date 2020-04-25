@@ -8,6 +8,7 @@ use std::path::Path;
 use std::fs::File;
 use std::io::prelude::*;
 use std::fs;
+use sha1::{Sha1, Digest};
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -32,6 +33,13 @@ pub struct PieceManager {
 
 }
 
+pub fn sha_data(data: &Vec<u8>) -> Vec<u8> {
+    let mut hasher = Sha1::new();
+    hasher.input(data);
+    let result = hasher.result();
+    result.to_vec()
+}
+
 pub fn make_piece_data_filename(piece_id: u32) -> String {
     return format!("{}.dave", piece_id);
 }
@@ -40,10 +48,15 @@ pub fn read_piece_from_file(dir: &str, piece_id: u32) -> PieceData {
     let path = format!("{}/{}", dir, make_piece_data_filename(piece_id));
     println!("Reading piece from file: {}", path);
 
+    let mut f = File::open(path).expect("Couldnt open peice file");
+    // read all data
+    let mut data = Vec::new();
+    let bytes_read = f.read_to_end(&mut data).expect("Error reading");
+    println!("Read {} bytes from file", bytes_read);
 
     PieceData {
-        id: 0,
-        data: vec![]
+        id: piece_id,
+        data,
     }
 }
 
@@ -474,6 +487,21 @@ mod test {
 
     #[test]
     fn test_read_piece_from_file() {
-        //read_piece_from_file("test/output", 1);
+        // real torrent piece
+        let piece = read_piece_from_file("test/sha-test", 0);
+        let my_sha = sha_data(&piece.data);
+
+        // get piece data from torrent
+        let filepath = "big-buck-bunny.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+
+        let the_sha =torrent.pieces.get(0)
+            .expect("get 1st piece")
+            .clone();
+
+        println!("These should match:");
+        print_byte_array("->", &my_sha);
+        print_byte_array("->", &the_sha);
+        assert_eq!(the_sha, my_sha);
     }
 }
