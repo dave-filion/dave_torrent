@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 #[derive(Debug)]
 pub struct WorkChunk {
     pub piece_index: u32,
@@ -45,7 +43,8 @@ mod test {
 
         // check piece_manager internals
         assert_eq!(piece_manager.expected_block_ids.len(), 4);
-        assert_eq!(piece_manager.expected_block_ids.get(&3).unwrap().len(), 4);
+        println!("expected block ids for piece 3: {:?}", piece_manager.expected_block_ids.get(&3));
+        assert_eq!(piece_manager.expected_block_ids.get(&3).unwrap().len(), 5);
 
         println!("piece_map: {:?}", piece_manager.piece_map);
         assert_eq!(piece_manager.piece_map.keys().len(), 4);
@@ -53,7 +52,7 @@ mod test {
         println!("current block ids: {:?}", piece_manager.current_block_ids);
         assert_eq!(piece_manager.current_block_ids.keys().len(), 4);
 
-        // try adding block
+        // // try adding block
         let b = Block {
             data: vec![0, 1, 2, 3],
             piece_index: 0,

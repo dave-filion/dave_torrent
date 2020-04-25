@@ -7,6 +7,7 @@ use bytebuffer::ByteBuffer;
 use std::path::Path;
 use std::fs::File;
 use std::io::prelude::*;
+use std::fs;
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -52,6 +53,9 @@ pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     let p = format!("{}/{}", output_dir, make_piece_data_filename(piece.id));
     let path = Path::new(p.as_str());
     println!("writing piece {} to filename: {:?}", piece.id, path);
+
+    // create dir if not present
+    fs::create_dir_all(output_dir).expect("Error creating dir");
 
     let mut file = match File::create(path) {
         Ok(file) => file,
@@ -248,6 +252,22 @@ mod test {
     use crate::print_torrent_info;
     use rand::thread_rng;
     use rand::Rng;
+    use std::fs::{self, ReadDir};
+    use std::thread;
+    use std::time::Duration;
+
+    fn clear_test_dir(dir: &str) {
+        if let Ok(d) = fs::read_dir(dir) {
+            for f in d {
+                if let Ok(f) = f {
+                    let path = f.path();
+                    println!("removing file: {:?}", path);
+                    fs::remove_file(path);
+                }
+            }
+        }
+
+    }
 
     #[test]
     fn test_init_from_torrent() {
@@ -269,10 +289,12 @@ mod test {
 
     #[test]
     fn test_assemble_piece() {
+        clear_test_dir("test/output1");
+
         let num_pieces = 3;
         let piece_size = 10;
         let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output".to_string());
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output1".to_string());
         let wq = pm.init_work_queue();
 
         println!("pm => {:?}", pm);
@@ -301,10 +323,11 @@ mod test {
 
     #[test]
     fn test_assemble_piece_with_odd_block_size() {
+        clear_test_dir("test/output2");
         let num_pieces = 2;
         let piece_size = 12;
         let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output".to_string());
+        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output2".to_string());
         let wq = pm.init_work_queue();
 
         assert_eq!(pm.expected_block_ids.get(&0).unwrap().len(), 3); // should be 3 expected blocks, 2 5's and 1 2
@@ -344,6 +367,8 @@ mod test {
 
     #[test]
     fn test_write_piece_to_file() {
+        clear_test_dir("/test/output3");
+
         let mut d = Vec::new();
         // write 1000 bytes
         for i in 0..100 {
@@ -354,11 +379,13 @@ mod test {
             id: 1,
             data: d,
         };
-        write_piece_to_file("test/output", piece);
+        write_piece_to_file("test/output3", piece);
     }
 
     #[test]
     fn test_process_piece() {
+        clear_test_dir("test/output4");
+
         let b1 = Block{
             data: vec![0x01, 0x02, 0x03, 0x04, 0x05],
             piece_index: 0,
@@ -378,7 +405,7 @@ mod test {
             block_id: 2
         };
 
-        let mut piece_man = PieceManager::new(1, 15, 5, "test/output".to_string());
+        let mut piece_man = PieceManager::new(1, 15, 5, "test/output4".to_string());
         let mut workqueue = piece_man.init_work_queue();
         println!("wq = {:?}", workqueue);
 
@@ -386,8 +413,11 @@ mod test {
         piece_man.add_block(b2);
         piece_man.add_block(b3);
 
+        // wait a sec
+        thread::sleep(Duration::from_millis(500));
+
         // file should have been created
-        let mut data_file = File::open("test/output/0.dave").expect("Should be there");
+        let mut data_file = File::open("test/output4/0.dave").expect("Should be there");
         let mut buf = Vec::new();
         let bytes_read = data_file.read_to_end(&mut buf).unwrap();
         println!("Read {} bytes from data file", bytes_read);
@@ -399,6 +429,8 @@ mod test {
 
     #[test]
     fn test_process_piece_with_larger_file() {
+        clear_test_dir("test/output5");
+
         // use rand::seq::SliceRandom;
 
         let num_blocks = 20;
@@ -427,7 +459,7 @@ mod test {
         // blocks.shuffle(&mut thread_rng);
 
         // init piece manager
-        let mut pm = PieceManager::new(1, (num_blocks * block_size) as i64, block_size, "test/output".to_string());
+        let mut pm = PieceManager::new(1, (num_blocks * block_size) as i64, block_size, "test/output5".to_string());
         let wq = pm.init_work_queue();
         println!("Initialized work queue with {} entries", wq.len());
 
@@ -442,6 +474,6 @@ mod test {
 
     #[test]
     fn test_read_piece_from_file() {
-        read_piece_from_file("test/output", 1);
+        //read_piece_from_file("test/output", 1);
     }
 }

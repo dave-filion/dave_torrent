@@ -150,7 +150,7 @@ fn main() -> Result<(), Error>{
             &mut work_queue,
             tx.clone(),
         ) {
-            println!("Couldn't download from peer.");
+            println!("Couldn't download from peer. err: {:?}", e);
         }
     }
 
