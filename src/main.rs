@@ -18,10 +18,11 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
 
 const CONNECT_WORKERS: usize = 4;
+const DL_WORKERS: usize = 4;
 
 type PeerAddr = (IpAddr, u16);
 
-pub struct ConnWorker {
+pub struct ThreadWorker {
     pub id: usize,
     pub thread: Option<thread::JoinHandle<()>>
 }
@@ -47,16 +48,15 @@ fn make_output_dir(filename: &str) -> String {
 }
 
 
-pub fn join_connection_workers(mut workers:  Vec<ConnWorker>) {
+pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker>) {
     // wait for all con workers to be done
     for worker in &mut workers {
-        println!("joining on conn worker {}", worker.id);
+        println!("joining on {} worker {}", worker_name, worker.id);
         if let Some(thread) = worker.thread.take() {
             thread.join().unwrap();
         }
     }
-    println!("All conn workers shut down/joined");
-
+    println!("All {} workers shut down/joined", worker_name);
 }
 
 fn main() -> Result<(), Error>{
@@ -196,41 +196,55 @@ fn main() -> Result<(), Error>{
 
     // create tx/rx channels for eligible peers
     let (peer_sender, peer_recv) = channel::<Peer>();
+    let peer_recv_arc = Arc::new(Mutex::new(peer_recv));
 
     // start eligible peer/downloading threads
-    // TODO one dl thread for now, could spawn a thread for each peer
-    let dl_thread = thread::spawn(move || {
+    let mut dl_workers = Vec::new();
+    for i in 0..DL_WORKERS {
         let mut wq_clone = work_queue.clone();
-        loop {
-            let block_sender_clone = block_sender.clone();
-            match peer_recv.recv() {
-                Ok(peer) => {
-                    println!("got elible peer: {:?}, gonna start downloading", peer);
-                    match attempt_peer_download(peer, &mut wq_clone, block_sender_clone) {
-                        Ok(()) => {
-                            println!("Successful peer download");
-                        },
-                        Err(e) => {
-                            println!("Error peer download: {:?}", e);
-                        }
-                    }
+        let block_sender_clone = block_sender.clone();
+        let peer_recv_clone = peer_recv_arc.clone();
 
-                },
-                Err(e) => {
-                    println!("error recv: {:?}", e);
-                    break;
+        let dl_thread = thread::spawn(move || {
+            loop {
+                let guard = peer_recv_clone.lock().unwrap();
+                let next = guard.recv();
+                // let go of lock
+                std::mem::drop(guard);
+
+                match next {
+                    Ok(peer) => {
+                        // kick off new thread and try downloading
+                        println!("DL-thread-{} got peer: {:?}, gonna start downloading", i, peer);
+                        match attempt_peer_download(peer, &mut wq_clone, &block_sender_clone) {
+                            Ok(()) => {
+                                println!("Successful peer download");
+                            },
+                            Err(e) => {
+                                println!("Error peer download: {:?}", e);
+                            }
+                        }
+
+                    },
+                    Err(e) => {
+                        println!("error recv: {:?}", e);
+                        break;
+                    }
                 }
             }
-        }
 
-        println!("download thread exiting");
-    });
+            println!("download thread {} exiting", i);
+        });
+        dl_workers.push(ThreadWorker{
+            id: i,
+            thread: Some(dl_thread),
+        })
+    }
 
     // Open connect worker threads
     let mut conn_workers = Vec::new();
+    println!("Started looking for eligible peers to connect to...");
     for i in 0..CONNECT_WORKERS {
-        println!("Starting connection worker thread: {}", i);
-
         // make clones for threads
         let peer_sender_clone = peer_sender.clone();
         let pq = peer_queue.clone();
@@ -246,7 +260,6 @@ fn main() -> Result<(), Error>{
                         std::mem::drop(guard);
 
                         // to long running stuff
-                        println!("Thread {} trying peer: {:?}", i, ip);
                         match attempt_peer_connect(
                             ip,
                             port,
@@ -255,11 +268,11 @@ fn main() -> Result<(), Error>{
                         ) {
                             Ok(peer) => {
                                 // connected to peer ok, put on send to eligible channel
-                                println!("Conn thread: {} CONNECT SUCCESS TO {:?}", i, ip);
+                                println!("Conn-thread-{} connected to {:?}", i, ip);
                                 peer_sender_clone.send(peer);
                             },
                             Err(_e) => {
-                                println!("Conn thread: {} couldnt connect to ip: {:?}", i, ip);
+                                // println!("Conn thread: {} couldnt connect to ip: {:?}", i, ip);
                             }
                         }
                     },
@@ -269,20 +282,22 @@ fn main() -> Result<(), Error>{
                 }
             }
         });
-        conn_workers.push(ConnWorker{
+        conn_workers.push(ThreadWorker {
             id: i,
             thread: Some(conn_thread_handle),
         })
     }
 
     // Wait for all threads to finish and join
-    join_connection_workers(conn_workers);
+    // TODO need beter signal to start shutting down
+    thread::sleep(Duration::from_secs(1));
+    join_connection_workers("conn", conn_workers);
 
     // safe to shut down peer sender
     std::mem::drop(peer_sender);
 
-    // join download thread
-    dl_thread.join().unwrap();
+    // join download threads
+    join_connection_workers("download", dl_workers);
 
     // wait for block thread
     println!("Waiting for block processing thead to join...");

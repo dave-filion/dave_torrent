@@ -43,8 +43,6 @@ pub fn attempt_peer_connect(
     // TODO recv bitfield
     peer.recv_garbage();
     peer.send_interested();
-
-    // unchoke, otherwise return
     peer.recv_unchoke()?;
 
     Ok(peer)
@@ -54,7 +52,7 @@ pub fn attempt_peer_connect(
 pub fn attempt_peer_download(
     mut peer: Peer,
     work_queue: &mut Arc<RwLock<VecDeque<WorkChunk>>>,
-    processing_chan: Sender<Block>,
+    processing_chan: &Sender<Block>,
 ) -> Result<(), Error> {
 
     // start pulling work off work queue
@@ -323,7 +321,7 @@ impl Peer {
         match read_result {
             Ok(bytes_read) => {
                 let header = format!("peer {:?} bitfield", self.ip);
-                print_byte_array_len(header.as_str(), &buf, bytes_read);
+                // print_byte_array_len(header.as_str(), &buf, bytes_read);
             }
             Err(e) => {}
         }
@@ -390,7 +388,7 @@ impl Peer {
                 Ok(())
             }
             _ => {
-                println!("received msg other then choke! No good");
+                // println!("received msg other then choke! No good");
                 Err(err_msg("received msg other then choke"))
             }
         }
