@@ -124,8 +124,6 @@ impl PieceManager {
         // println!("piece hashes is {} bytes", size);
         let np = t.pieces.len().clone();
 
-        // TODO figure out output dir name based on torrent
-
         PieceManager {
             num_pieces: np,
             piece_size: t.piece_length.clone(),
@@ -157,7 +155,18 @@ impl PieceManager {
         if self.expected_block_ids.get(&piece_index) == self.current_block_ids.get(&piece_index) {
             println!("We have all blocks for piece {}, assembling...", piece_index);
             let piece_data = self.assemble_piece(piece_index);
-            // TODO verify hash
+
+            match self.piece_hashes.get(&piece_index) {
+                Some(verified_hash) => {
+                    println!("Checking verified hash for piece {}:", piece_index);
+                    print_byte_array("->", verified_hash);
+                    let hash = sha_data(&piece_data.data);
+                    print_byte_array("->", &hash);
+                },
+                None => {
+                    println!("No hash found for piece {} in torrent! Assuming its contents are correct", piece_index);
+                }
+            }
 
             // write to file
             write_piece_to_file(self.output_dir.as_str(), piece_data);
@@ -291,7 +300,7 @@ mod test {
         print_torrent_info(&torrent);
 
 
-        let piece_man = PieceManager::init_from_torrent(&torrent);
+        let piece_man = PieceManager::init_from_torrent(&torrent, "test/output".to_string());
 
         // verify piece hash is expected
         let piece_hash : [u8; 20] = [0x84, 0x88, 0x1D, 0x13, 0x2F, 0xB4, 0x41, 0x89, 0x1B, 0xD8, 0x7F, 0xD7, 0x6A, 0xA2, 0x28, 0x33, 0x49, 0x7F, 0x2C, 0xFA];
@@ -471,10 +480,16 @@ mod test {
         println!("done making blocks, shuffling and assembling");
         // blocks.shuffle(&mut thread_rng);
 
+
         // init piece manager
         let mut pm = PieceManager::new(1, (num_blocks * block_size) as i64, block_size, "test/output5".to_string());
         let wq = pm.init_work_queue();
         println!("Initialized work queue with {} entries", wq.len());
+        // verify hash and write to pieceman
+        let data = data_buf.to_bytes();
+        let verified_hash = sha_data(&data);
+        println!("data hash is {:?}", verified_hash);
+        // pm.piece_hashes.insert(0, verified_hash);
 
         // add blocks to piece man
         for block in blocks {
@@ -483,6 +498,8 @@ mod test {
         }
 
         // verify piece written to file
+        let piece_data = read_piece_from_file("test/output5", 0);
+
     }
 
     #[test]
