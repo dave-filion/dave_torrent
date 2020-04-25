@@ -105,7 +105,7 @@ impl PieceManager {
         }
     }
 
-    pub fn init_from_torrent(t: &Torrent) -> Self{
+    pub fn init_from_torrent(t: &Torrent, output_dir: String) -> Self{
         // create piece hash map
         let mut piece_hashes : HashMap<u32, [u8; 20]>= HashMap::new();
         for (i, p) in t.pieces.iter().enumerate() {
@@ -135,7 +135,7 @@ impl PieceManager {
             expected_block_ids: HashMap::new(),
             piece_hashes,
             finished_pieces: init_finished_pieces(np),
-            output_dir: "test/output".to_string(),
+            output_dir,
         }
     }
 

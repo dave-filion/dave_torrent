@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::UdpSocket;
 use std::time::Duration;
-use std::thread;
+use std::{thread, fs};
 use std::sync::mpsc::channel;
 use failure::Error;
 
@@ -13,6 +13,7 @@ use dave_torrent::download::{Block};
 use dave_torrent::pieces::*;
 use dave_torrent::peer::*;
 use dave_torrent::*;
+use std::path::Path;
 
 
 fn get_torrent_size(t: &Torrent) -> i64 {
@@ -29,7 +30,8 @@ fn get_torrent_size(t: &Torrent) -> i64 {
 fn main() -> Result<(), Error>{
     //*
     // OPEN TORRENT
-    let filepath = "big-buck-bunny.torrent";
+    let filename = "big-buck-bunny.torrent";
+    let filepath = Path::new(filename);
 
     let torrent = Torrent::read_from_file(filepath).unwrap();
 
@@ -44,6 +46,13 @@ fn main() -> Result<(), Error>{
     let total_size = get_torrent_size(&torrent);
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.as_ref().expect("Need announce");
+
+    let output_dir = format!("download/{}_output", filename);
+    println!("Creating output dir: {}", output_dir);
+
+    if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
+        panic!("Couldnt create output dir: {:?}", &output_dir);
+    }
 
 
     //*
@@ -116,7 +125,7 @@ fn main() -> Result<(), Error>{
 
     //*
     // GENERATE PIECE MANAGER AND WORK QUE
-    let mut piece_man = PieceManager::init_from_torrent(&torrent);
+    let mut piece_man = PieceManager::init_from_torrent(&torrent, output_dir.clone());
     let mut work_queue = piece_man.init_work_queue();
 
     //*
