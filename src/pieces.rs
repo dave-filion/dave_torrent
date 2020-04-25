@@ -31,10 +31,25 @@ pub struct PieceManager {
 
 }
 
+pub fn make_piece_data_filename(piece_id: u32) -> String {
+    return format!("{}.dave", piece_id);
+}
+
+pub fn read_piece_from_file(dir: &str, piece_id: u32) -> PieceData {
+    let path = format!("{}/{}", dir, make_piece_data_filename(piece_id));
+    println!("Reading piece from file: {}", path);
+
+
+    PieceData {
+        id: 0,
+        data: vec![]
+    }
+}
+
 // outputs piece data to file
 pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     // make dave files (data files)
-    let p = format!("{}/{}.dave", output_dir, piece.id);
+    let p = format!("{}/{}", output_dir, make_piece_data_filename(piece.id));
     let path = Path::new(p.as_str());
     println!("writing piece {} to filename: {:?}", piece.id, path);
 
@@ -423,7 +438,10 @@ mod test {
         }
 
         // verify piece written to file
+    }
 
-
+    #[test]
+    fn test_read_piece_from_file() {
+        read_piece_from_file("test/output", 1);
     }
 }
