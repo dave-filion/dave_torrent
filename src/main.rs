@@ -27,6 +27,15 @@ fn get_torrent_size(t: &Torrent) -> i64 {
     }
 }
 
+fn make_output_dir(filename: &str) -> String {
+    let output_dir = format!("download/{}_output", filename);
+    println!("Creating output dir: {}", output_dir);
+    if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
+        panic!("Couldnt create output dir: {:?}", &output_dir);
+    }
+    output_dir
+}
+
 fn main() -> Result<(), Error>{
     //*
     // OPEN TORRENT
@@ -47,34 +56,32 @@ fn main() -> Result<(), Error>{
     let piece_size = torrent.piece_length;
     let announce_url = torrent.announce.as_ref().expect("Need announce");
 
-    let output_dir = format!("download/{}_output", filename);
-    println!("Creating output dir: {}", output_dir);
-
-    if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
-        panic!("Couldnt create output dir: {:?}", &output_dir);
-    }
-
+    // open output dir if not created
+    let output_dir = make_output_dir(filename);
 
     //*
     // CONNECT TO TRACKER
     // // bind socket to local port
     let local_address = "0.0.0.0:34254";
     let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
-    println!("udp socket bound to local port: {:?}", sock);
 
     // set rw timemout on sock
     sock.set_write_timeout(Some(Duration::from_secs(2)));
     sock.set_read_timeout(Some(Duration::from_secs(2)));
 
     // connect to remote addr (retry on fail)
-    print!("Connecting to tracker...");
     let remote_addr = get_socket_addr(announce_url.as_str());
 
-    // TODO move to function
+    println!("\n");
+    println!("***********************************");
+    println!("* TRACKER CONNECTION AND ANNOUNCE *");
+    println!("***********************************\n");
+
+    print!("> Connecting to tracker");
     let max_attempts = 5;
     let mut attempt = 1;
     loop {
-        print!("({}) ...", attempt);
+        print!("({}): ", attempt);
         match sock.connect(remote_addr) {
             Ok(_) => {
                 println!("connected!");
@@ -116,6 +123,11 @@ fn main() -> Result<(), Error>{
 
     //*
     // GET PEER LIST
+    println!("\n");
+    println!("*****************");
+    println!("* GOT PEER LIST *");
+    println!("*****************\n");
+
     let peer_addrs = announce_resp.addresses;
     println!("List of {} peers:", peer_addrs.len());
     for p in &peer_addrs {

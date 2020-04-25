@@ -121,11 +121,11 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
             return Err(err_msg("Max attempts reached... quitting"));
         }
 
-        println!("> Perform connection attempt ({}):", attempt);
+        print!("> Perform connection attempt ({}):", attempt);
         // send message to remote udp port
         match sock.send(&connect_packet) {
             Ok(_) => {
-                println!("sent!");
+                println!(" sent!");
             },
             Err(e) => {
                 println!("Error sending conn request: {:?}", e);

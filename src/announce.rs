@@ -109,9 +109,8 @@ pub fn perform_announce(
         if attempt > max_attempts {
             return Err(err_msg("max attempts reached. quitting"));
         }
-        println!("> Perform announce attempt ({}):", attempt);
+        print!("> Announcing: ({}):", attempt);
 
-        print!("Sending announce packet...");
         match sock.send(&announce_packet) {
             Ok(_) => {
                 println!("sent!");
@@ -123,11 +122,11 @@ pub fn perform_announce(
             }
         }
 
-        print!("Waiting for announce response...");
+        print!("> Announce response: ");
         let mut response_buf = [0; 512];
         match sock.recv(&mut response_buf) {
-            Ok(bytes_read) => {
-                println!("got {} byte response", bytes_read);
+            Ok(_bytes_read) => {
+                println!("got it!");
                 return Ok(response_buf.to_vec().into());
             },
             Err(e) => {
