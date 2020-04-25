@@ -12,6 +12,7 @@ pub mod download;
 pub mod peer;
 pub mod announce;
 pub mod pieces;
+pub mod app;
 
 pub const BLOCK_SIZE: u32 = 16384; // 16384 (2^14) bytes is accepted block size
 
