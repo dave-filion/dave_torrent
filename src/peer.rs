@@ -62,7 +62,6 @@ pub fn attempt_peer_download(
                 );
                 match peer.fetch_block_data(&next_chunk) {
                     Ok(data) => {
-                        println!("got it!");
                         // print_byte_array("piece data", &piece_data);
                         let block = Block {
                             data,

@@ -126,7 +126,6 @@ fn main() -> Result<(), Error>{
         println!("Block processing thread started!");
 
         loop {
-            println!("Waiting for incoming blocks...");
             match rx.recv() {
                 Ok(block) => {
                     piece_man.add_block(block);
@@ -142,7 +141,7 @@ fn main() -> Result<(), Error>{
     //*
     // ATTEMPT CONNECTING TO EACH PEER SERIALLY
     for (ip, port) in &peer_addrs {
-        if let Err(e) = attempt_peer_download(
+        if let Err(_e) = attempt_peer_download(
             ip.clone(),
             port.clone(),
             &info_hash_array,
@@ -150,7 +149,7 @@ fn main() -> Result<(), Error>{
             &mut work_queue,
             tx.clone(),
         ) {
-            println!("Couldn't download from peer. err: {:?}", e);
+            println!("Couldn't download from peer");
         }
     }
 
