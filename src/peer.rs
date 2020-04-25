@@ -14,6 +14,7 @@ use std::time::Duration;
 use crate::download::{Block, WorkChunk};
 use crate::*;
 use std::collections::VecDeque;
+use std::sync::{Arc, RwLock};
 
 pub fn attempt_peer_connect(
     ip: IpAddr,
@@ -52,13 +53,15 @@ pub fn attempt_peer_connect(
 // higher level function, tries connecting to peer, handshake, and start downloading data
 pub fn attempt_peer_download(
     mut peer: Peer,
-    work_queue: &mut VecDeque<WorkChunk>,
+    work_queue: &mut Arc<RwLock<VecDeque<WorkChunk>>>,
     processing_chan: Sender<Block>,
 ) -> Result<(), Error> {
 
     // start pulling work off work queue
     loop {
-        match work_queue.pop_front() {
+        let mut next_block = work_queue.write().unwrap().pop_front();
+
+        match next_block {
             Some(next_chunk) => {
                 println!(
                     "> DL {}:{}...",
@@ -76,7 +79,7 @@ pub fn attempt_peer_download(
 
                         if let Err(e) = processing_chan.send(block) {
                             println!("error sending block to processing thread! Putting chunk back on work queue and breaking");
-                            work_queue.push_back(next_chunk);
+                            work_queue.write().unwrap().push_back(next_chunk);
                             break;
                         }
                     }
@@ -84,7 +87,7 @@ pub fn attempt_peer_download(
                         println!(
                             "Error getting piece data, putting chunk back on queue, and breaking"
                         );
-                        work_queue.push_back(next_chunk);
+                        work_queue.write().unwrap().push_back(next_chunk);
                         break;
                     }
                 }

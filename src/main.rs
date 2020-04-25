@@ -15,7 +15,7 @@ use dave_torrent::peer::*;
 use dave_torrent::*;
 use std::path::Path;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 const CONNECT_WORKERS: usize = 4;
 
@@ -149,7 +149,8 @@ fn main() -> Result<(), Error>{
     // GENERATE PIECE MANAGER AND WORK QUE
     let mut piece_man = PieceManager::init_from_torrent(&torrent, output_dir.clone());
     let mut work_queue = piece_man.init_work_queue();
-    println!("Made workqueue with {} jobs", work_queue.len());
+    // make with ARC and R/w lock since multiple threads will use it
+    let mut work_queue = Arc::new(RwLock::new(work_queue));
 
     //*
     // GET PEER LIST
@@ -165,12 +166,15 @@ fn main() -> Result<(), Error>{
         println!("-> {:?}:{:?}", addr, port);
         peer_queue.push_front(p.clone());
     }
-
     println!("Peer queue: {:?}", peer_queue);
+    // Queue of peers to try, put in arc with mutex
+    let peer_queue = Arc::new(Mutex::new(peer_queue));
 
     // //*
     // // START PROCESSING THREAD AND MAKE CHANNELS
     let (block_sender, block_recv) = channel::<Block>();
+
+    // let wq_clone = work_queue.clone();
     let block_proc_handle =  thread::spawn(move || {
         println!("Block processing thread started!");
 
@@ -178,6 +182,8 @@ fn main() -> Result<(), Error>{
             match block_recv.recv() {
                 Ok(block) => {
                     piece_man.add_block(block);
+                    // TODO if something goes wrong adding block, put back on work queue
+
                 },
                 Err(e) => {
                     println!("Recv Error: {:?}. Breaking", e);
@@ -187,20 +193,20 @@ fn main() -> Result<(), Error>{
         }
     });
 
-    // put in arc with mutex
-    let peer_queue = Arc::new(Mutex::new(peer_queue));
+
     // create tx/rx channels for eligible peers
     let (peer_sender, peer_recv) = channel::<Peer>();
 
     // start eligible peer/downloading threads
     // TODO one dl thread for now, could spawn a thread for each peer
     let dl_thread = thread::spawn(move || {
+        let mut wq_clone = work_queue.clone();
         loop {
             let block_sender_clone = block_sender.clone();
             match peer_recv.recv() {
                 Ok(peer) => {
                     println!("got elible peer: {:?}, gonna start downloading", peer);
-                    match attempt_peer_download(peer, &mut work_queue, block_sender_clone) {
+                    match attempt_peer_download(peer, &mut wq_clone, block_sender_clone) {
                         Ok(()) => {
                             println!("Successful peer download");
                         },
