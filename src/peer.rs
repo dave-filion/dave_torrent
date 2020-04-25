@@ -15,17 +15,12 @@ use crate::download::{Block, WorkChunk};
 use crate::*;
 use std::collections::VecDeque;
 
-// higher level function, tries connecting to peer, handshake, and start downloading data
-pub fn attempt_peer_download(
+pub fn attempt_peer_connect(
     ip: IpAddr,
     port: u16,
     info_hash_array: &[u8; 20],
     peer_id: &[u8; 20],
-    work_queue: &mut VecDeque<WorkChunk>,
-    processing_chan: Sender<Block>,
-) -> Result<(), Error> {
-    println!("\n---------------------\n");
-    println!("Connecting to peer: {:?}:{}", ip, port);
+) -> Result<Peer, Error> {
     let peer_result = Peer::new(
         ip.clone(),
         port.clone(),
@@ -51,8 +46,17 @@ pub fn attempt_peer_download(
     // unchoke, otherwise return
     peer.recv_unchoke()?;
 
+    Ok(peer)
+}
+
+// higher level function, tries connecting to peer, handshake, and start downloading data
+pub fn attempt_peer_download(
+    mut peer: Peer,
+    work_queue: &mut VecDeque<WorkChunk>,
+    processing_chan: Sender<Block>,
+) -> Result<(), Error> {
+
     // start pulling work off work queue
-    println!("Peer {:?} ready for downloading", peer.ip);
     loop {
         match work_queue.pop_front() {
             Some(next_chunk) => {
@@ -269,6 +273,7 @@ pub fn make_request_msg(piece_index: u32, begin: u32, len: u32) -> Vec<u8> {
     buf.to_bytes()
 }
 
+#[derive(Debug)]
 pub struct Peer {
     choked: bool,
     stream: TcpStream,
