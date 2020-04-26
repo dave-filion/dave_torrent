@@ -14,9 +14,11 @@ use crate::{get_socket_addr, perform_connection};
 use crate::announce::perform_announce;
 use crate::pieces::PieceManager;
 use crate::download::{Block, WorkChunk};
+use std::sync::{Arc, Mutex};
 
 const CONNECT_WORKERS: usize = 4;
 const DL_WORKERS: usize = 4;
+const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
 
 type PeerAddr = (IpAddr, u16);
 
@@ -72,13 +74,15 @@ pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker
 }
 
 pub struct App {
-    pub connected_peers: HashSet<IpAddr>,
+    pub connected_peers: Arc<Mutex<HashSet<IpAddr>>>,
+    pub possible_peers: HashSet<PeerAddr>,
 }
 
 impl App {
     pub fn new() -> Self {
         App {
-            connected_peers: HashSet::new(),
+            connected_peers: Arc::new(Mutex::new(HashSet::new())),
+            possible_peers: HashSet::new(),
         }
     }
 
@@ -96,24 +100,10 @@ impl App {
         for p in &peer_addrs {
             let (addr, port) = p;
             println!("-> {:?}:{:?}", addr, port);
+            self.possible_peers.insert(p.clone());
             peer_sender.send(p.clone());
         }
     }
-
-    // peer_update_tx, peer_update_rx
-    // update: ADD(ip), REMOVE(ip)
-    // thread listening and updating hashset
-
-    fn add_connected_peer(&mut self) {
-        println!("adding connect");
-        // self.connected_peers.insert(ip.clone());
-    }
-
-    fn remove_connected_peer(&mut self, ip: &IpAddr) {
-        println!("Removing peer from connected set: {:?}", ip);
-        self.connected_peers.remove(ip);
-    }
-
 
     fn init_conn_dl_workers(&mut self,
                             info_hash_array: [u8;20],
@@ -132,6 +122,8 @@ impl App {
             let peer_recv_clone = peer_recv.clone();
             let work_recv_clone = work_recv.clone();
             let work_sender_clone = work_sender.clone();
+            // thread local copy of connected peers hash
+            let connected_peers = self.connected_peers.clone();
 
             let dl_thread = thread::spawn(move || {
                 loop {
@@ -144,11 +136,13 @@ impl App {
                             if let Err(e) = connect_result {
                                 // couldnt connect to this peer, continue to next
                                 // println!("DL-{} Couldnt connect to peer: {:?}", i, ip);
+                                println!("couldnt connect to peer: {:?}", ip);
                                 continue;
                             }
                             let mut peer = connect_result.unwrap();
 
                             // self.add_connected_peer();
+                            connected_peers.lock().unwrap().insert(ip.clone());
 
                             // kick off new thread and try downloading
                             println!("DL-{} starting download from peer: {:?}", i, peer);
@@ -156,10 +150,12 @@ impl App {
                                 Ok(()) => {
                                     println!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip);
                                     // self.remove_connected_peer(&ip);
+                                    connected_peers.lock().unwrap().remove(&ip);
                                 },
                                 Err(e) => {
                                     println!("DL-{} Error peer download: {:?}", i, e);
                                     // self.remove_connected_peer(&ip);
+                                    connected_peers.lock().unwrap().remove(&ip);
                                 }
                             }
 
@@ -208,6 +204,10 @@ impl App {
             thread: Some(block_proc_handle)
         });
         workers
+    }
+
+    pub fn connected_to_peer (&self, ip: &IpAddr)  -> bool {
+        self.connected_peers.lock().unwrap().contains(ip)
     }
 
     pub fn download(&mut self, filename: &str) -> Result<(), Error>{
@@ -320,6 +320,24 @@ impl App {
         self.seed_work_channel(work_queue, work_sender.clone());
 
         // Download happening now, need a way to refresh peers to try reconnect
+        // Do peer refresh
+        loop {
+            // wait a bit
+            thread::sleep(Duration::from_secs(PEER_CONNECT_REFRESH as u64));
+
+            println!("Doing peer refresh");
+            for (ip, port) in &self.possible_peers {
+                println!("checking peer {:?}", ip);
+                if self.connected_to_peer(ip) {
+                    println!("already connected to peer, skipping!");
+                } else {
+                    println!("not connected, adding to list");
+                    // send to peer connection
+                    peer_sender.send((ip.clone(), port.clone()));
+                }
+            }
+
+        }
 
         // Shutdown
         drop(peer_sender);

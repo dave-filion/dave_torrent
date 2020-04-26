@@ -14,6 +14,7 @@ use crossbeam::crossbeam_channel::{Receiver, Sender};
 use crate::download::{Block, WorkChunk};
 use crate::*;
 use std::collections::VecDeque;
+use crate::peer::PeerMessage::KeepAlive;
 
 pub fn attempt_peer_connect(
     ip: IpAddr,
@@ -493,6 +494,10 @@ impl Peer {
 pub fn parse_peer_msg(buf: &[u8]) -> Result<PeerMessage, Error> {
     // get size
     let msg_size = get_u32_at(buf, 0);
+    if msg_size <= 4 {
+        // keep alive
+        return Ok(PeerMessage::KeepAlive)
+    }
 
     // get id
     let id = buf[4];
