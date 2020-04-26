@@ -50,14 +50,13 @@ pub fn attempt_peer_connect(
 // higher level function, tries connecting to peer, handshake, and start downloading data
 pub fn attempt_peer_download(
     mut peer: Peer,
+    work_sender: &Sender<WorkChunk>,
     work_recv: &Receiver<WorkChunk>,
     processing_chan: &Sender<Block>,
 ) -> Result<(), Error> {
 
     // start pulling work off work queue
     loop {
-        let mut next_block = work_recv.recv();
-
         match work_recv.recv() {
             Ok(next_chunk) => {
                 println!(
@@ -75,18 +74,14 @@ pub fn attempt_peer_download(
                         };
 
                         if let Err(e) = processing_chan.send(block) {
-                            println!("error sending block to processing thread! Putting chunk back on work queue and breaking");
-                            // TODO need to put back on queue
-                            // work_queue.write().unwrap().push_back(next_chunk);
+                            println!("Error fetching block: {}-{} {:?} adding back to work channel",next_chunk.piece_index, next_chunk.block_id, e);
+                            work_sender.send(next_chunk);
                             break;
                         }
                     }
                     Err(e) => {
-                        println!(
-                            "Error getting piece data, putting chunk back on queue, and breaking"
-                        );
-                        // TODO need to put back on queue
-                        // work_queue.write().unwrap().push_back(next_chunk);
+                        println!("Error fetching block: {}-{} {:?} adding back to work channel",next_chunk.piece_index, next_chunk.block_id, e);
+                        work_sender.send(next_chunk);
                         break;
                     }
                 }

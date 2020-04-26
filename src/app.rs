@@ -49,9 +49,9 @@ fn make_output_dir(filename: &str) -> String {
 pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker>) {
     // wait for all con workers to be done
     for worker in &mut workers {
-        println!("joining on {} worker {}", worker_name, worker.id);
         if let Some(thread) = worker.thread.take() {
             thread.join().unwrap();
+            println!("{}-{} joined", worker_name, worker.id);
         }
     }
     println!("All {} workers shut down/joined", worker_name);
@@ -90,6 +90,7 @@ impl App {
                             peer_id: [u8;20],
                             peer_recv: Receiver<PeerAddr>,
                             block_sender: Sender<Block>,
+                            work_sender: Sender<WorkChunk>,
                             work_recv: Receiver<WorkChunk>) -> Vec<ThreadWorker>{
         println!("Initializing connections and download threads/workers");
 
@@ -99,6 +100,7 @@ impl App {
             let block_sender_clone = block_sender.clone();
             let peer_recv_clone = peer_recv.clone();
             let work_recv_clone = work_recv.clone();
+            let work_sender_clone = work_sender.clone();
 
             let dl_thread = thread::spawn(move || {
                 loop {
@@ -110,25 +112,25 @@ impl App {
                             let connect_result = attempt_peer_connect(ip.clone(), port.clone(), &info_hash_array, &peer_id);
                             if let Err(e) = connect_result {
                                 // couldnt connect to this peer, continue to next
-                                println!("Couldnt connect to peer: {:?}", ip);
+                                println!("DL-{} Couldnt connect to peer: {:?}", i, ip);
                                 continue;
                             }
                             let mut peer = connect_result.unwrap();
 
                             // kick off new thread and try downloading
-                            println!("DL-thread-{} starting download from peer: {:?}", i, peer);
-                            match attempt_peer_download(peer, &work_recv_clone, &block_sender_clone) {
+                            println!("DL-{} starting download from peer: {:?}", i, peer);
+                            match attempt_peer_download(peer, &work_sender_clone, &work_recv_clone, &block_sender_clone) {
                                 Ok(()) => {
-                                    println!("Successful peer download");
+                                    println!("DL-{} Successful peer download", i);
                                 },
                                 Err(e) => {
-                                    println!("Error peer download: {:?}", e);
+                                    println!("DL-{} Error peer download: {:?}", i, e);
                                 }
                             }
 
                         },
                         Err(e) => {
-                            println!("error recv: {:?}", e);
+                            println!("DL-{} error recv: {:?}", i, e);
                             break;
                         }
                     }
@@ -273,15 +275,16 @@ impl App {
         let dl_workers = self.init_conn_dl_workers(
             info_hash_array.clone(),
             peer_id.clone(),
-            peer_recv,
-            block_sender,
-            work_recv);
+            peer_recv.clone(),
+            block_sender.clone(),
+            work_sender.clone(),
+            work_recv.clone());
 
         // seed peer channel with all peers
-        self.seed_peer_channel(announce_resp.addresses, peer_sender);
+        self.seed_peer_channel(announce_resp.addresses, peer_sender.clone());
 
         // seed work channel with all work chunks
-        self.seed_work_channel(work_queue, work_sender);
+        self.seed_work_channel(work_queue, work_sender.clone());
 
         // Download happening now
 
