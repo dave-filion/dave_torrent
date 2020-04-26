@@ -446,8 +446,8 @@ impl Peer {
                     return Ok(all_data);
                 }
             }
-            // wait a sec then read again
-            thread::sleep(Duration::from_secs(1));
+            // // wait a sec then read again
+            // thread::sleep(Duration::from_secs(1));
             i += 1;
         }
     }

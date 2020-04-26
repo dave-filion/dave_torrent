@@ -152,7 +152,7 @@ impl PieceManager {
             Ok(elapsed) => {
                 let millis = elapsed.as_millis();
                 println!("{} bytes in {}ms", block_size, millis);
-                println!("{} bytes per ms", block_size / millis as usize);
+                // println!("{} bytes per ms", block_size / millis as usize);
             },
             Err(e) => {
                 println!("error getting system time: {:?}", e);
