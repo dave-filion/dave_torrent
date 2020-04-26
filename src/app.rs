@@ -1,6 +1,6 @@
 use rand::Rng;
 use std::path::Path;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use byteorder::{BigEndian, ByteOrder};
 use lava_torrent::torrent::v1::Torrent;
 use std::net::{UdpSocket, IpAddr};
@@ -19,6 +19,11 @@ const CONNECT_WORKERS: usize = 4;
 const DL_WORKERS: usize = 4;
 
 type PeerAddr = (IpAddr, u16);
+
+enum PeerUpdate {
+    Add(IpAddr),
+    Remove(IpAddr)
+}
 
 pub struct ThreadWorker {
     pub id: usize,
@@ -67,12 +72,13 @@ pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker
 }
 
 pub struct App {
-
+    pub connected_peers: HashSet<IpAddr>,
 }
 
 impl App {
     pub fn new() -> Self {
         App {
+            connected_peers: HashSet::new(),
         }
     }
 
@@ -94,13 +100,29 @@ impl App {
         }
     }
 
+    // peer_update_tx, peer_update_rx
+    // update: ADD(ip), REMOVE(ip)
+    // thread listening and updating hashset
+
+    fn add_connected_peer(&mut self) {
+        println!("adding connect");
+        // self.connected_peers.insert(ip.clone());
+    }
+
+    fn remove_connected_peer(&mut self, ip: &IpAddr) {
+        println!("Removing peer from connected set: {:?}", ip);
+        self.connected_peers.remove(ip);
+    }
+
+
     fn init_conn_dl_workers(&mut self,
                             info_hash_array: [u8;20],
                             peer_id: [u8;20],
                             peer_recv: Receiver<PeerAddr>,
                             block_sender: Sender<Block>,
                             work_sender: Sender<WorkChunk>,
-                            work_recv: Receiver<WorkChunk>) -> Vec<ThreadWorker>{
+                            work_recv: Receiver<WorkChunk>,
+    ) -> Vec<ThreadWorker>{
         println!("Initializing connections and download threads/workers");
 
         // start eligible peer/downloading threads
@@ -126,14 +148,18 @@ impl App {
                             }
                             let mut peer = connect_result.unwrap();
 
+                            // self.add_connected_peer();
+
                             // kick off new thread and try downloading
                             println!("DL-{} starting download from peer: {:?}", i, peer);
                             match attempt_peer_download(peer, &work_sender_clone, &work_recv_clone, &block_sender_clone) {
                                 Ok(()) => {
-                                    println!("DL-{} Successful peer download", i);
+                                    println!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip);
+                                    // self.remove_connected_peer(&ip);
                                 },
                                 Err(e) => {
                                     println!("DL-{} Error peer download: {:?}", i, e);
+                                    // self.remove_connected_peer(&ip);
                                 }
                             }
 
