@@ -280,18 +280,15 @@ impl App {
             work_sender.clone(),
             work_recv.clone());
 
-        // seed peer channel with all peers
+        // seed channels with data from announce response
         self.seed_peer_channel(announce_resp.addresses, peer_sender.clone());
-
-        // seed work channel with all work chunks
         self.seed_work_channel(work_queue, work_sender.clone());
 
-        // Download happening now
+        // Download happening now, need a way to refresh peers to try reconnect
 
-        // start joining worker threads
+        // Shutdown
+        drop(peer_sender);
         join_connection_workers("conn/dl", dl_workers);
-
-        // TODO shut down senders/recvs
         join_connection_workers("assembly", asm_workers);
 
         println!("Done");

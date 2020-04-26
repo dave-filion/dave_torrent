@@ -243,7 +243,7 @@ impl PieceManager {
 
     // assemble a piece from blocks and check its hash
     pub fn assemble_piece(&mut self, piece_id: u32) -> PieceData {
-        println!("Trying to assemble piece: {}",piece_id);
+        println!("Assembling piece: {}",piece_id);
 
         let mut data = ByteBuffer::new();
 
@@ -255,10 +255,8 @@ impl PieceManager {
         block_ids.sort();
 
         for b_id in &block_ids {
-            println!("getting block data for bid: {}", b_id);
             let block = blocks.get(b_id).unwrap();
             data.write_bytes(&block.data);
-            println!("wrote block {} data to buffer, new size: {}", b_id, data.len());
         }
 
         PieceData {
