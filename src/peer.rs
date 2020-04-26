@@ -8,13 +8,12 @@ use failure::err_msg;
 use failure::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::str::from_utf8;
-use std::sync::mpsc::{channel, Sender};
 use std::time::Duration;
+use crossbeam::crossbeam_channel::{Receiver, Sender};
 
 use crate::download::{Block, WorkChunk};
 use crate::*;
 use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
 
 pub fn attempt_peer_connect(
     ip: IpAddr,
@@ -51,16 +50,16 @@ pub fn attempt_peer_connect(
 // higher level function, tries connecting to peer, handshake, and start downloading data
 pub fn attempt_peer_download(
     mut peer: Peer,
-    work_queue: &mut Arc<RwLock<VecDeque<WorkChunk>>>,
+    work_recv: &Receiver<WorkChunk>,
     processing_chan: &Sender<Block>,
 ) -> Result<(), Error> {
 
     // start pulling work off work queue
     loop {
-        let mut next_block = work_queue.write().unwrap().pop_front();
+        let mut next_block = work_recv.recv();
 
-        match next_block {
-            Some(next_chunk) => {
+        match work_recv.recv() {
+            Ok(next_chunk) => {
                 println!(
                     "> DL {}:{}...",
                     next_chunk.piece_index, next_chunk.block_id
@@ -77,7 +76,8 @@ pub fn attempt_peer_download(
 
                         if let Err(e) = processing_chan.send(block) {
                             println!("error sending block to processing thread! Putting chunk back on work queue and breaking");
-                            work_queue.write().unwrap().push_back(next_chunk);
+                            // TODO need to put back on queue
+                            // work_queue.write().unwrap().push_back(next_chunk);
                             break;
                         }
                     }
@@ -85,13 +85,14 @@ pub fn attempt_peer_download(
                         println!(
                             "Error getting piece data, putting chunk back on queue, and breaking"
                         );
-                        work_queue.write().unwrap().push_back(next_chunk);
+                        // TODO need to put back on queue
+                        // work_queue.write().unwrap().push_back(next_chunk);
                         break;
                     }
                 }
             }
-            None => {
-                println!("No more work on queue! breaking out of loop");
+            Err(e) => {
+                println!("Error recv on work queue: {:?}", e);
                 break;
             }
         }
