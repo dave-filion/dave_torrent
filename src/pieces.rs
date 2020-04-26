@@ -4,12 +4,13 @@ use std::collections::{VecDeque, HashMap, HashSet};
 use crate::download::{WorkChunk, Block};
 use failure::_core::str::from_utf8;
 use bytebuffer::ByteBuffer;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::prelude::*;
 use std::fs;
 use sha1::{Sha1, Digest};
 use std::time::{Duration, SystemTime};
+use failure::Error;
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -47,20 +48,21 @@ pub fn make_piece_data_filename(piece_id: u32) -> String {
     return format!("{}.dave", piece_id);
 }
 
-pub fn read_piece_from_file(dir: &str, piece_id: u32) -> PieceData {
+pub fn read_piece_from_file(dir: &str, piece_id: u32) -> Result<PieceData, Error> {
     let path = format!("{}/{}", dir, make_piece_data_filename(piece_id));
     println!("Reading piece from file: {}", path);
 
-    let mut f = File::open(path).expect("Couldnt open peice file");
+    let mut f = File::open(path)?;
+
     // read all data
     let mut data = Vec::new();
-    let bytes_read = f.read_to_end(&mut data).expect("Error reading");
+    let bytes_read = f.read_to_end(&mut data)?;
     println!("Read {} bytes from file", bytes_read);
 
-    PieceData {
+    Ok(PieceData {
         id: piece_id,
         data,
-    }
+    })
 }
 
 // outputs piece data to file
@@ -312,6 +314,63 @@ impl PieceManager {
     }
 }
 
+pub fn assemble_files_from_pieces(output_dir: &str, file_list: Vec<(PathBuf, i64)>) {
+    let mut current_piece = 0;
+    let mut buf = ByteBuffer::new();
+    for output_file in file_list {
+        let (filename, needed_length) = output_file;
+        let needed_length = needed_length as usize;
+        println!("Trying to write {} bytes to file: {:?}", needed_length, filename);
+
+        // read in enough bytes from pieces to write file
+        loop {
+            if buf.len() < needed_length {
+                println!("buf ({}b) not long enough (need {}b), reading next piece: {}", buf.len(), needed_length, current_piece);
+
+                // read in piece
+                match read_piece_from_file(output_dir, current_piece) {
+                    Ok(piece) => {
+
+                        // write piece data to buf
+                        buf.write_all(piece.data.as_slice());
+
+                        current_piece += 1;
+                    },
+                    Err(e) => {
+                        println!("Out of files to read!");
+                        return;
+                    }
+                }
+
+            } else {
+                println!("buf ({}b) is long enough for file: ({}b), writing file", buf.len(), needed_length);
+
+                // write buf[0..needed_len] to file
+                let file_data = buf.to_bytes();
+
+                // get file slice
+                let file_slice = &file_data[0..needed_length];
+                print_byte_array(format!("{:?}", filename).as_str(), file_slice);
+                // wrrite slice to file
+                let new_file_path = Path::new(output_dir).join(filename);
+                println!("new file path: {:?}", new_file_path);
+                let mut new_file = File::create(&new_file_path).expect("Couldnt open new file to write to");
+                new_file.write_all(file_slice);
+                println!("wrote {} bytes to file: {:?}", file_slice.len(), new_file_path);
+
+                // update buf such that
+                let remaining_in_buf = &file_data[needed_length..file_data.len()];
+                println!("{} bytes remaining in buf, moving to new buffer", remaining_in_buf.len());
+
+                let mut buf = ByteBuffer::new();
+                buf.write_bytes(remaining_in_buf);
+                break;
+            }
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -550,7 +609,7 @@ mod test {
     #[test]
     fn test_read_piece_from_file() {
         // real torrent piece
-        let piece = read_piece_from_file("test/sha-test", 0);
+        let piece = read_piece_from_file("test/sha-test", 0).unwrap();
         let my_sha = sha_data(&piece.data);
 
         // get piece data from torrent
@@ -579,6 +638,53 @@ mod test {
         assert_eq!(wq.len(), 16848);
         assert!(piece_man.piece_map.get(&0).is_none());
         assert!(piece_man.piece_map.get(&1).is_none());
-
     }
+
+    #[test]
+    fn test_build_files_from_pieces() {
+        let output_dir = "test/assembly";
+
+        // each piece is 5 bytes
+        let p1_data = vec![0x01, 0x01, 0x01, 0x01, 0x01];
+        let p2_data = vec![0x01, 0x01, 0x01, 0x02, 0x02];
+        let p3_data = vec![0x02, 0x02, 0x02, 0x03, 0x03];
+
+        // write pieces to files
+        write_piece_to_file(output_dir, PieceData{
+            id: 0,
+            data: p1_data,
+        });
+        write_piece_to_file(output_dir, PieceData{
+            id: 1,
+            data: p2_data,
+        });
+        write_piece_to_file(output_dir, PieceData{
+            id: 2,
+            data: p3_data,
+        });
+
+
+        let file1 = (PathBuf::from("f1.txt"), 8);
+        let file2 = (PathBuf::from("f2.txt"), 5);
+        let file3 = (PathBuf::from("f3.txt"), 2);
+
+        let mut file_list = Vec::new();
+        file_list.push(file1);
+        file_list.push(file2);
+        file_list.push(file3);
+
+        assemble_files_from_pieces(output_dir, file_list);
+
+        // verify files are correct
+        let f1 = File::open(format!("{}/{}", output_dir, "f1.txt")).unwrap();
+        assert_eq!(f1.metadata().unwrap().len(), 8);
+
+        let f2 = File::open(format!("{}/{}", output_dir, "f2.txt")).unwrap();
+        assert_eq!(f2.metadata().unwrap().len(), 5);
+
+        let f3 = File::open(format!("{}/{}", output_dir, "f3.txt")).unwrap();
+        assert_eq!(f3.metadata().unwrap().len(), 2);
+    }
+
 }
+
