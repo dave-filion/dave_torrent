@@ -121,7 +121,7 @@ impl App {
                             let connect_result = attempt_peer_connect(ip.clone(), port.clone(), &info_hash_array, &peer_id);
                             if let Err(e) = connect_result {
                                 // couldnt connect to this peer, continue to next
-                                println!("DL-{} Couldnt connect to peer: {:?}", i, ip);
+                                // println!("DL-{} Couldnt connect to peer: {:?}", i, ip);
                                 continue;
                             }
                             let mut peer = connect_result.unwrap();
