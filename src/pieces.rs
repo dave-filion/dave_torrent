@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::fs;
 use sha1::{Sha1, Digest};
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -30,6 +31,8 @@ pub struct PieceManager {
     pub piece_hashes: HashMap<u32, [u8; 20]>,
     pub finished_pieces: HashMap<u32, PieceData>,
     pub output_dir: String,
+
+    pub last_ts: SystemTime,
 
 }
 
@@ -91,6 +94,7 @@ fn init_finished_pieces(n: usize) -> HashMap<u32, PieceData> {
 impl PieceManager {
     // dont use this, use init from torrent instead
     pub fn new(num_pieces: usize, piece_size: i64, block_size: u32, output_dir: String) -> Self {
+        let now = SystemTime::now();
 
         PieceManager{
             num_pieces,
@@ -102,6 +106,7 @@ impl PieceManager {
             piece_hashes: HashMap::new(),
             finished_pieces: init_finished_pieces(num_pieces),
             output_dir,
+            last_ts: now,
         }
     }
 
@@ -134,11 +139,26 @@ impl PieceManager {
             piece_hashes,
             finished_pieces: init_finished_pieces(np),
             output_dir,
+            last_ts: SystemTime::now(),
         }
     }
 
     pub fn add_block(&mut self, block: Block) {
         println!("Adding block: {}:{}", block.piece_index, block.block_id);
+
+        // print time to download block
+        let block_size = block.data.len();
+        match self.last_ts.elapsed() {
+            Ok(elapsed) => {
+                let millis = elapsed.as_millis();
+                println!("{} bytes in {}ms", block_size, millis);
+                println!("{} bytes per ms", block_size / millis as usize);
+            },
+            Err(e) => {
+                println!("error getting system time: {:?}", e);
+            }
+        }
+        self.last_ts = SystemTime::now();
 
         let piece_index = block.piece_index.clone();
 
