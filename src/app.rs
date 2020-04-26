@@ -36,7 +36,16 @@ fn get_torrent_size(t: &Torrent) -> i64 {
     }
 }
 
-fn make_output_dir(filename: &str) -> String {
+pub fn make_specific_output_dir(dir: &str, torrent_name: &str) -> String {
+    let output_dir = format!("{}/{}_output", dir, torrent_name);
+    println!("Creating output dir: {}", output_dir);
+    if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
+        panic!("Couldnt create output dir: {:?}", &output_dir);
+    }
+    output_dir
+}
+
+pub fn make_output_dir(filename: &str) -> String {
     let output_dir = format!("download/{}_output", filename);
     println!("Creating output dir: {}", output_dir);
     if let Err(_e) = fs::create_dir_all(output_dir.clone()) {

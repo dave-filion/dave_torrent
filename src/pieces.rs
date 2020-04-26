@@ -188,8 +188,34 @@ impl PieceManager {
 
         println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
 
+        // check if there are existing pieces, if so, don't add them back in
+        println!("checking if pieces downloaded already at: {}", self.output_dir);
+        let mut completed_pieces = HashSet::new();
+        if Path::new(self.output_dir.as_str()).exists() {
+            println!("found {:?} exists already, checking for pieces...", self.output_dir);
+            // load all files of type *.dave in output
+            let paths = fs::read_dir(self.output_dir.as_str()).unwrap();
+            for p in  paths {
+                let file = p.unwrap();
+                let path = file.path();
+                let stem = path.file_stem().unwrap().to_str().unwrap();
+                let parsed: usize = stem.parse().unwrap(); // TODO error checking
+                println!("found piece = {:?}", parsed);
+                completed_pieces.insert(parsed);
+            }
+            println!("Found {} already completed pieces", completed_pieces.len());
+        } else {
+            println!("No existing output dir found... starting from scratch");
+        }
+
         // seperate pieces into chunks
         for piece_index in 0..num_pieces {
+
+            if completed_pieces.contains(&piece_index) {
+                println!("piece {} was already completed! skipping", piece_index);
+                continue;
+            }
+
             let mut i = 0;
             let mut block_id = 0;
 
@@ -275,6 +301,7 @@ mod test {
     use std::fs::{self, ReadDir};
     use std::thread;
     use std::time::Duration;
+    use crate::app::{make_output_dir, make_specific_output_dir};
 
     fn clear_test_dir(dir: &str) {
         if let Ok(d) = fs::read_dir(dir) {
@@ -518,5 +545,20 @@ mod test {
         print_byte_array("->", &my_sha);
         print_byte_array("->", &the_sha);
         assert_eq!(the_sha, my_sha);
+    }
+
+    #[test]
+    fn test_resume_from_pieces() {
+        let filepath = "big-buck-bunny.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+        let output_dir = make_specific_output_dir("test/resume-pieces", filepath);
+        let mut piece_man = PieceManager::init_from_torrent(&torrent, output_dir);
+        let wq = piece_man.init_work_queue();
+
+        // verify piece manager doesnt have entries for piece 0 or 1
+        assert_eq!(wq.len(), 16848);
+        assert!(piece_man.piece_map.get(&0).is_none());
+        assert!(piece_man.piece_map.get(&1).is_none());
+
     }
 }
