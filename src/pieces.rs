@@ -180,6 +180,7 @@ impl PieceManager {
 
             match self.piece_hashes.get(&piece_index) {
                 Some(verified_hash) => {
+                    //TODO: actually check that hashes match!
                     println!("Checking verified hash for piece {}:", piece_index);
                     print_byte_array("->", verified_hash);
                     let hash = sha_data(&piece_data.data);
@@ -194,6 +195,24 @@ impl PieceManager {
             write_piece_to_file(self.output_dir.as_str(), piece_data);
 
             // remove block data for piece and clean up
+            self.remove_piece_data(piece_index);
+        }
+    }
+
+    // remove all data in memory for piece (block data)
+    pub fn remove_piece_data(&mut self, piece_index: u32) {
+        println!("removing all piece data for piece: {}", piece_index);
+
+        match self.piece_map.remove(&piece_index) {
+            Some(result) => {
+                println!("removed and dropping piece data for id : {}, total size: {}", piece_index, std::mem::size_of_val(&result));
+
+                // drop, although should be dropped automatically
+                std::mem::drop(result);
+            },
+            None => {
+                println!("Couldnt remove piece index from piece map! {}", piece_index);
+            }
         }
     }
 
@@ -413,83 +432,6 @@ mod test {
         assert_eq!(piece_hash, *other_hash);
     }
 
-    #[test]
-    fn test_assemble_piece() {
-        clear_test_dir("test/output1");
-
-        let num_pieces = 3;
-        let piece_size = 10;
-        let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output1".to_string());
-        let wq = pm.init_work_queue();
-
-        println!("pm => {:?}", pm);
-        let block1 = Block{
-            data: vec![0,1,2,3,4],
-            piece_index: 0,
-            offset: 0,
-            block_id: 0
-        };
-        pm.add_block(block1);
-
-        let block2 = Block{
-            data: vec![5,6,7,8,9],
-            piece_index: 0,
-            offset: 5,
-            block_id: 1
-        };
-        pm.add_block(block2);
-
-        // try assembling piece 0
-        let piece_data = pm.assemble_piece(0);
-        println!("piece data: {:?}", piece_data);
-        assert_eq!(piece_data.id, 0);
-        assert_eq!(piece_data.data.len(), 10);
-    }
-
-    #[test]
-    fn test_assemble_piece_with_odd_block_size() {
-        clear_test_dir("test/output2");
-        let num_pieces = 2;
-        let piece_size = 12;
-        let block_size = 5;
-        let mut pm = PieceManager::new(num_pieces, piece_size, block_size, "test/output2".to_string());
-        let wq = pm.init_work_queue();
-
-        assert_eq!(pm.expected_block_ids.get(&0).unwrap().len(), 3); // should be 3 expected blocks, 2 5's and 1 2
-        println!("wq => {:?}", wq);
-
-        println!("pm => {:?}", pm);
-        let block1 = Block{
-            data: vec![0,1,2,3,4],
-            piece_index: 0,
-            offset: 0,
-            block_id: 0
-        };
-        pm.add_block(block1);
-
-        let block2 = Block{
-            data: vec![5,6,7,8,9],
-            piece_index: 0,
-            offset: 5,
-            block_id: 1
-        };
-        pm.add_block(block2);
-
-        let block3 = Block{
-            data: vec![0x11, 0x12],
-            piece_index: 0,
-            offset: 10,
-            block_id: 2
-        };
-        pm.add_block(block3);
-
-        // try assembling piece 0
-        let piece_data = pm.assemble_piece(0);
-        println!("piece data: {:?}", piece_data);
-        assert_eq!(piece_data.id, 0);
-        assert_eq!(piece_data.data.len(), 12);
-    }
 
     #[test]
     fn test_write_piece_to_file() {
