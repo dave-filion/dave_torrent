@@ -422,7 +422,6 @@ mod test {
         // how do files relate to pieces?
         print_torrent_info(&torrent);
 
-
         let piece_man = PieceManager::init_from_torrent(&torrent, "test/output".to_string());
 
         // verify piece hash is expected
@@ -431,7 +430,6 @@ mod test {
 
         assert_eq!(piece_hash, *other_hash);
     }
-
 
     #[test]
     fn test_write_piece_to_file() {
@@ -493,6 +491,9 @@ mod test {
 
         print_byte_array("data_file", &buf);
         assert_eq!(buf, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+
+        // verify piece data is no longer in piece manager
+        assert!(piece_man.piece_map.get(&0).is_none());
     }
 
     #[test]
