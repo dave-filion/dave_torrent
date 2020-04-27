@@ -447,54 +447,54 @@ mod test {
         };
         write_piece_to_file("test/output3", piece);
     }
-
-    #[test]
-    fn test_process_piece() {
-        clear_test_dir("test/output4");
-
-        let b1 = Block{
-            data: vec![0x01, 0x02, 0x03, 0x04, 0x05],
-            piece_index: 0,
-            offset: 0,
-            block_id: 0
-        };
-        let b2 = Block{
-            data: vec![0x06, 0x07, 0x08, 0x09, 0x10],
-            piece_index: 0,
-            offset: 5,
-            block_id: 1
-        };
-        let b3 = Block{
-            data: vec![0x11, 0x12, 0x13, 0x14, 0x15],
-            piece_index: 0,
-            offset: 10,
-            block_id: 2
-        };
-
-        let mut piece_man = PieceManager::new(1, 15, 5, "test/output4".to_string());
-        let mut workqueue = piece_man.init_work_queue();
-        println!("wq = {:?}", workqueue);
-
-        piece_man.add_block(b1);
-        piece_man.add_block(b2);
-        piece_man.add_block(b3);
-
-        // wait a sec
-        thread::sleep(Duration::from_millis(500));
-
-        // file should have been created
-        let mut data_file = File::open("test/output4/0.dave").expect("Should be there");
-        let mut buf = Vec::new();
-        let bytes_read = data_file.read_to_end(&mut buf).unwrap();
-        println!("Read {} bytes from data file", bytes_read);
-        assert_eq!(bytes_read, 15);
-
-        print_byte_array("data_file", &buf);
-        assert_eq!(buf, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
-
-        // verify piece data is no longer in piece manager
-        assert!(piece_man.piece_map.get(&0).is_none());
-    }
+    //
+    // #[test]
+    // fn test_process_piece() {
+    //     clear_test_dir("test/output4");
+    //
+    //     let b1 = Block{
+    //         data: vec![0x01, 0x02, 0x03, 0x04, 0x05],
+    //         piece_index: 0,
+    //         offset: 0,
+    //         block_id: 0
+    //     };
+    //     let b2 = Block{
+    //         data: vec![0x06, 0x07, 0x08, 0x09, 0x10],
+    //         piece_index: 0,
+    //         offset: 5,
+    //         block_id: 1
+    //     };
+    //     let b3 = Block{
+    //         data: vec![0x11, 0x12, 0x13, 0x14, 0x15],
+    //         piece_index: 0,
+    //         offset: 10,
+    //         block_id: 2
+    //     };
+    //
+    //     let mut piece_man = PieceManager::new(1, 15, 5, "test/output4".to_string());
+    //     let mut workqueue = piece_man.init_work_queue();
+    //     println!("wq = {:?}", workqueue);
+    //
+    //     piece_man.add_block(b1);
+    //     piece_man.add_block(b2);
+    //     piece_man.add_block(b3);
+    //
+    //     // wait a sec
+    //     thread::sleep(Duration::from_millis(500));
+    //
+    //     // file should have been created
+    //     let mut data_file = File::open("test/output4/0.dave").expect("Should be there");
+    //     let mut buf = Vec::new();
+    //     let bytes_read = data_file.read_to_end(&mut buf).unwrap();
+    //     println!("Read {} bytes from data file", bytes_read);
+    //     assert_eq!(bytes_read, 15);
+    //
+    //     print_byte_array("data_file", &buf);
+    //     assert_eq!(buf, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+    //
+    //     // verify piece data is no longer in piece manager
+    //     assert!(piece_man.piece_map.get(&0).is_none());
+    // }
 
     #[test]
     fn test_process_piece_with_larger_file() {
