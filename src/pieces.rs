@@ -247,13 +247,13 @@ impl PieceManager {
                 let file = p.unwrap();
                 let filename = file.file_name();
                 let ext = get_ext_from_filename(&filename.to_str().unwrap());
-                println!("ext: {:?}", ext);
+
+                // need to make sure only .dave files are checked
                 if ext.is_some() && ext.unwrap() != "dave" {
                     println!("skipping file with ext: {:?}", ext.unwrap());
                     continue
                 }
                 let path = file.path();
-                // need to make sure only .dave files are checked
                 let stem = path.file_stem().unwrap().to_str().unwrap();
                 let parsed: usize = stem.parse().unwrap(); // TODO error checking
                 println!("found piece = {:?}", parsed);
