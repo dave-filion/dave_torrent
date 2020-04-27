@@ -11,6 +11,7 @@ use std::fs;
 use sha1::{Sha1, Digest};
 use std::time::{Duration, SystemTime};
 use failure::Error;
+use std::ffi::OsStr;
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -91,6 +92,12 @@ fn init_finished_pieces(n: usize) -> HashMap<u32, PieceData> {
     // init finished pieces map with optionals
     let mut fp = HashMap::new();
     fp
+}
+
+pub fn get_ext_from_filename(filename: &str) -> Option<&str> {
+    Path::new(filename)
+        .extension()
+        .and_then(OsStr::to_str)
 }
 
 impl PieceManager {
@@ -238,7 +245,15 @@ impl PieceManager {
             let paths = fs::read_dir(self.output_dir.as_str()).unwrap();
             for p in  paths {
                 let file = p.unwrap();
+                let filename = file.file_name();
+                let ext = get_ext_from_filename(&filename.to_str().unwrap());
+                println!("ext: {:?}", ext);
+                if ext.is_some() && ext.unwrap() != "dave" {
+                    println!("skipping file with ext: {:?}", ext.unwrap());
+                    continue
+                }
                 let path = file.path();
+                // need to make sure only .dave files are checked
                 let stem = path.file_stem().unwrap().to_str().unwrap();
                 let parsed: usize = stem.parse().unwrap(); // TODO error checking
                 println!("found piece = {:?}", parsed);
