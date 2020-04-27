@@ -12,6 +12,7 @@ use sha1::{Sha1, Digest};
 use std::time::{Duration, SystemTime};
 use failure::Error;
 use std::ffi::OsStr;
+use crate::logging::debug;
 
 #[derive(Debug)]
 pub struct PieceData {
@@ -51,14 +52,14 @@ pub fn make_piece_data_filename(piece_id: u32) -> String {
 
 pub fn read_piece_from_file(dir: &str, piece_id: u32) -> Result<PieceData, Error> {
     let path = format!("{}/{}", dir, make_piece_data_filename(piece_id));
-    println!("Reading piece from file: {}", path);
+    debug(format!("Reading piece from file: {}", path));
 
     let mut f = File::open(path)?;
 
     // read all data
     let mut data = Vec::new();
     let bytes_read = f.read_to_end(&mut data)?;
-    println!("Read {} bytes from file", bytes_read);
+    debug(format!("Read {} bytes from file", bytes_read));
 
     Ok(PieceData {
         id: piece_id,
@@ -71,7 +72,7 @@ pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     // make dave files (data files)
     let p = format!("{}/{}", output_dir, make_piece_data_filename(piece.id));
     let path = Path::new(p.as_str());
-    println!("writing piece {} to filename: {:?}", piece.id, path);
+    debug(format!("writing piece {} to filename: {:?}", piece.id, path));
 
     // create dir if not present
     fs::create_dir_all(output_dir).expect("Error creating dir");
@@ -82,7 +83,7 @@ pub fn write_piece_to_file(output_dir: &str, piece: PieceData) {
     };
 
     match file.write_all(piece.data.as_slice()) {
-        Ok(_) => println!("Wrote piece {} to file successfully", piece.id),
+        Ok(_) => debug(format!("Wrote piece {} to file successfully", piece.id)),
         Err(e) => panic!("Error writing piece to file: {:?}", e),
     }
 
@@ -133,9 +134,9 @@ impl PieceManager {
             piece_hashes.insert(i.clone() as u32, ba);
         }
 
-        // println!("piece hashes: {:?}", piece_hashes);
+        // debug(format!("piece hashes: {:?}", piece_hashes);
         // let size = std::mem::size_of_val(&piece_hashes);
-        // println!("piece hashes is {} bytes", size);
+        // debug(format!("piece hashes is {} bytes", size);
         let np = t.pieces.len().clone();
 
         PieceManager {
@@ -153,18 +154,18 @@ impl PieceManager {
     }
 
     pub fn add_block(&mut self, block: Block) {
-        println!("Adding block: {}:{}", block.piece_index, block.block_id);
+        debug(format!("Adding block: {}:{}", block.piece_index, block.block_id));
 
         // print time to download block
         let block_size = block.data.len();
         match self.last_ts.elapsed() {
             Ok(elapsed) => {
                 let millis = elapsed.as_millis();
-                println!("{} bytes in {}ms", block_size, millis);
-                // println!("{} bytes per ms", block_size / millis as usize);
+                debug(format!("{} bytes in {}ms", block_size, millis));
+                // debug(format!("{} bytes per ms", block_size / millis as usize);
             },
             Err(e) => {
-                println!("error getting system time: {:?}", e);
+                debug(format!("error getting system time: {:?}", e));
             }
         }
         self.last_ts = SystemTime::now();
@@ -182,19 +183,19 @@ impl PieceManager {
 
 
         if self.expected_block_ids.get(&piece_index) == self.current_block_ids.get(&piece_index) {
-            println!("We have all blocks for piece {}, assembling...", piece_index);
+            debug(format!("We have all blocks for piece {}, assembling...", piece_index));
             let piece_data = self.assemble_piece(piece_index);
 
             match self.piece_hashes.get(&piece_index) {
                 Some(verified_hash) => {
                     //TODO: actually check that hashes match!
-                    println!("Checking verified hash for piece {}:", piece_index);
+                    debug(format!("Checking verified hash for piece {}:", piece_index));
                     print_byte_array("->", verified_hash);
                     let hash = sha_data(&piece_data.data);
                     print_byte_array("->", &hash);
                 },
                 None => {
-                    println!("No hash found for piece {} in torrent! Assuming its contents are correct", piece_index);
+                    debug(format!("No hash found for piece {} in torrent! Assuming its contents are correct", piece_index));
                 }
             }
 
@@ -208,17 +209,17 @@ impl PieceManager {
 
     // remove all data in memory for piece (block data)
     pub fn remove_piece_data(&mut self, piece_index: u32) {
-        println!("removing all piece data for piece: {}", piece_index);
+        debug(format!("removing all piece data for piece: {}", piece_index));
 
         match self.piece_map.remove(&piece_index) {
             Some(result) => {
-                println!("removed and dropping piece data for id : {}, total size: {}", piece_index, std::mem::size_of_val(&result));
+                debug(format!("removed and dropping piece data for id : {}, total size: {}", piece_index, std::mem::size_of_val(&result)));
 
                 // drop, although should be dropped automatically
                 std::mem::drop(result);
             },
             None => {
-                println!("Couldnt remove piece index from piece map! {}", piece_index);
+                debug(format!("Couldnt remove piece index from piece map! {}", piece_index));
             }
         }
     }
@@ -234,13 +235,13 @@ impl PieceManager {
         let mut current_block_ids : HashMap<u32, HashSet<u32>>= HashMap::new();
         let mut expected_block_ids : HashMap<u32, HashSet<u32>>= HashMap::new();
 
-        println!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size);
+        debug(format!("Making work queue with num_pieces:{}, piece_size:{}, chunk_size:{}...", num_pieces, piece_size, chunk_size));
 
         // check if there are existing pieces, if so, don't add them back in
-        println!("checking if pieces downloaded already at: {}", self.output_dir);
+        debug(format!("checking if pieces downloaded already at: {}", self.output_dir));
         let mut completed_pieces = HashSet::new();
         if Path::new(self.output_dir.as_str()).exists() {
-            println!("found {:?} exists already, checking for pieces...", self.output_dir);
+            debug(format!("found {:?} exists already, checking for pieces...", self.output_dir));
             // load all files of type *.dave in output
             let paths = fs::read_dir(self.output_dir.as_str()).unwrap();
             for p in  paths {
@@ -250,25 +251,25 @@ impl PieceManager {
 
                 // need to make sure only .dave files are checked
                 if ext.is_some() && ext.unwrap() != "dave" {
-                    println!("skipping file with ext: {:?}", ext.unwrap());
+                    debug(format!("skipping file with ext: {:?}", ext.unwrap()));
                     continue
                 }
                 let path = file.path();
                 let stem = path.file_stem().unwrap().to_str().unwrap();
                 let parsed: usize = stem.parse().unwrap(); // TODO error checking
-                println!("found piece = {:?}", parsed);
+                debug(format!("found piece = {:?}", parsed));
                 completed_pieces.insert(parsed);
             }
-            println!("Found {} already completed pieces", completed_pieces.len());
+            debug(format!("Found {} already completed pieces", completed_pieces.len()));
         } else {
-            println!("No existing output dir found... starting from scratch");
+            debug(format!("No existing output dir found... starting from scratch"));
         }
 
         // seperate pieces into chunks
         for piece_index in 0..num_pieces {
 
             if completed_pieces.contains(&piece_index) {
-                println!("piece {} was already completed! skipping", piece_index);
+                debug(format!("piece {} was already completed! skipping", piece_index));
                 continue;
             }
 
@@ -325,7 +326,7 @@ impl PieceManager {
 
     // assemble a piece from blocks and check its hash
     pub fn assemble_piece(&mut self, piece_id: u32) -> PieceData {
-        println!("Assembling piece: {}",piece_id);
+        debug(format!("Assembling piece: {}",piece_id));
 
         let mut data = ByteBuffer::new();
 
@@ -354,12 +355,12 @@ pub fn assemble_files_from_pieces(output_dir: &str, file_list: Vec<(PathBuf, i64
     for output_file in file_list {
         let (filename, needed_length) = output_file;
         let needed_length = needed_length as usize;
-        println!("Trying to write {} bytes to file: {:?}", needed_length, filename);
+        debug(format!("Trying to write {} bytes to file: {:?}", needed_length, filename));
 
         // read in enough bytes from pieces to write file
         loop {
             if buf.len() < needed_length {
-                println!("buf ({}b) not long enough (need {}b), reading next piece: {}", buf.len(), needed_length, current_piece);
+                debug(format!("buf ({}b) not long enough (need {}b), reading next piece: {}", buf.len(), needed_length, current_piece));
 
                 // read in piece
                 match read_piece_from_file(output_dir, current_piece) {
@@ -371,30 +372,30 @@ pub fn assemble_files_from_pieces(output_dir: &str, file_list: Vec<(PathBuf, i64
                         current_piece += 1;
                     },
                     Err(e) => {
-                        println!("Out of files to read!");
+                        debug(format!("Out of files to read!"));
                         return;
                     }
                 }
 
             } else {
-                println!("buf ({}b) is long enough for file: ({}b), writing file", buf.len(), needed_length);
+                debug(format!("buf ({}b) is long enough for file: ({}b), writing file", buf.len(), needed_length));
 
                 // write buf[0..needed_len] to file
                 let file_data = buf.to_bytes();
 
                 // get file slice
                 let file_slice = &file_data[0..needed_length];
-                print_byte_array(format!("{:?}", filename).as_str(), file_slice);
+                // print_byte_array(format!("{:?}", filename).as_str(), file_slice);
                 // wrrite slice to file
                 let new_file_path = Path::new(output_dir).join(filename);
-                println!("new file path: {:?}", new_file_path);
+                debug(format!("new file path: {:?}", new_file_path));
                 let mut new_file = File::create(&new_file_path).expect("Couldnt open new file to write to");
                 new_file.write_all(file_slice);
-                println!("wrote {} bytes to file: {:?}", file_slice.len(), new_file_path);
+                debug(format!("wrote {} bytes to file: {:?}", file_slice.len(), new_file_path));
 
                 // update buf such that
                 let remaining_in_buf = &file_data[needed_length..file_data.len()];
-                println!("{} bytes remaining in buf, moving to new buffer", remaining_in_buf.len());
+                debug(format!("{} bytes remaining in buf, moving to new buffer", remaining_in_buf.len()));
 
                 let mut buf = ByteBuffer::new();
                 buf.write_bytes(remaining_in_buf);

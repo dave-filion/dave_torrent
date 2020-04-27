@@ -14,6 +14,7 @@ use crate::{get_socket_addr, perform_connection};
 use crate::announce::perform_announce;
 use crate::pieces::PieceManager;
 use crate::download::{Block, WorkChunk};
+use crate::logging::{debug};
 use std::sync::{Arc, Mutex};
 
 const CONNECT_WORKERS: usize = 4;
@@ -45,7 +46,7 @@ fn get_torrent_size(t: &Torrent) -> i64 {
 
 pub fn make_specific_output_dir(dir: &str, torrent_name: &str) -> String {
     let output_dir = format!("{}/{}_output", dir, torrent_name);
-    println!("Creating output dir: {}", output_dir);
+    debug(format!("Creating output dir: {}", output_dir));
     if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
         panic!("Couldnt create output dir: {:?}", &output_dir);
     }
@@ -54,7 +55,7 @@ pub fn make_specific_output_dir(dir: &str, torrent_name: &str) -> String {
 
 pub fn make_output_dir(filename: &str) -> String {
     let output_dir = format!("download/{}_output", filename);
-    println!("Creating output dir: {}", output_dir);
+    debug(format!("Creating output dir: {}", output_dir));
     if let Err(_e) = fs::create_dir_all(output_dir.clone()) {
         panic!("Couldnt create output dir: {:?}", &output_dir);
     }
@@ -67,10 +68,10 @@ pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker
     for worker in &mut workers {
         if let Some(thread) = worker.thread.take() {
             thread.join().unwrap();
-            println!("{}-{} joined", worker_name, worker.id);
+            debug(format!("{}-{} joined", worker_name, worker.id));
         }
     }
-    println!("All {} workers shut down/joined", worker_name);
+    debug(format!("All {} workers shut down/joined", worker_name));
 }
 
 pub struct App {
@@ -87,19 +88,19 @@ impl App {
     }
 
     fn seed_work_channel(&mut self, work_queue: VecDeque<WorkChunk>, work_sender: Sender<WorkChunk>) {
-        println!("Seeding work channel with {} entries", work_queue.len());
+        debug(format!("Seeding work channel with {} entries", work_queue.len()));
         for work in work_queue {
             work_sender.send(work);
         }
-        println!("All work seeded");
+        debug(format!("All work seeded"));
     }
 
     fn seed_peer_channel(&mut self, peer_addrs: Vec<PeerAddr>, peer_sender: Sender<PeerAddr>) {
-        println!("Seeding peer channel with {} peers", peer_addrs.len());
+        debug(format!("Seeding peer channel with {} peers", peer_addrs.len()));
         // put all peers on channel
         for p in &peer_addrs {
             let (addr, port) = p;
-            println!("-> {:?}:{:?}", addr, port);
+            debug(format!("-> {:?}:{:?}", addr, port));
             self.possible_peers.insert(p.clone());
             peer_sender.send(p.clone());
         }
@@ -113,7 +114,7 @@ impl App {
                             work_sender: Sender<WorkChunk>,
                             work_recv: Receiver<WorkChunk>,
     ) -> Vec<ThreadWorker>{
-        println!("Initializing connections and download threads/workers");
+        debug(format!("Initializing connections and download threads/workers"));
 
         // start eligible peer/downloading threads
         let mut dl_workers = Vec::new();
@@ -135,8 +136,8 @@ impl App {
                             let connect_result = attempt_peer_connect(ip.clone(), port.clone(), &info_hash_array, &peer_id);
                             if let Err(e) = connect_result {
                                 // couldnt connect to this peer, continue to next
-                                // println!("DL-{} Couldnt connect to peer: {:?}", i, ip);
-                                println!("couldnt connect to peer: {:?}", ip);
+                                // debug(format!("DL-{} Couldnt connect to peer: {:?}", i, ip);
+                                debug(format!("couldnt connect to peer: {:?}", ip));
                                 continue;
                             }
                             let mut peer = connect_result.unwrap();
@@ -145,15 +146,15 @@ impl App {
                             connected_peers.lock().unwrap().insert(ip.clone());
 
                             // kick off new thread and try downloading
-                            println!("DL-{} starting download from peer: {:?}", i, peer);
+                            debug(format!("DL-{} starting download from peer: {:?}", i, peer));
                             match attempt_peer_download(peer, &work_sender_clone, &work_recv_clone, &block_sender_clone) {
                                 Ok(()) => {
-                                    println!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip);
+                                    debug(format!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
                                 },
                                 Err(e) => {
-                                    println!("DL-{} Error peer download: {:?}", i, e);
+                                    debug(format!("DL-{} Error peer download: {:?}", i, e));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
                                 }
@@ -161,13 +162,13 @@ impl App {
 
                         },
                         Err(e) => {
-                            println!("DL-{} error recv: {:?}", i, e);
+                            debug(format!("DL-{} error recv: {:?}", i, e));
                             break;
                         }
                     }
                 }
 
-                println!("download thread {} exiting", i);
+                debug(format!("download thread {} exiting", i));
             });
             dl_workers.push(ThreadWorker{
                 id: i,
@@ -179,10 +180,10 @@ impl App {
     }
 
     fn init_assembly_workers(&mut self, mut piece_man: PieceManager, block_recv: Receiver<Block>) -> Vec<ThreadWorker> {
-        println!("Initializing assembly threads/workers");
+        debug(format!("Initializing assembly threads/workers"));
         // TODO: be able to put failed blocks back on work queue
         let block_proc_handle =  thread::spawn(move || {
-            println!("Block processing thread started!");
+            debug(format!("Block processing thread started!"));
 
             loop {
                 match block_recv.recv() {
@@ -191,7 +192,7 @@ impl App {
                         // TODO if something goes wrong adding block, put back on work queue
                     },
                     Err(e) => {
-                        println!("Recv Error: {:?}. Breaking", e);
+                        debug(format!("Recv Error: {:?}. Breaking", e));
                         break;
                     }
                 }
@@ -245,26 +246,21 @@ impl App {
         // connect to remote addr (retry on fail)
         let remote_addr = get_socket_addr(announce_url.as_str());
 
-        println!("\n");
-        println!("***********************************");
-        println!("* TRACKER CONNECTION AND ANNOUNCE *");
-        println!("***********************************");
-
-        print!("> Connecting to tracker");
+        debug(format!("> Connecting to tracker"));
         let max_attempts = 5;
         let mut attempt = 1;
         loop {
             print!("({}): ", attempt);
             match sock.connect(remote_addr) {
                 Ok(_) => {
-                    println!("connected!");
+                    debug(format!("connected!"));
                     break;
                 },
-                Err(e) => print!("{:?}... trying again...", e),
+                Err(e) => debug(format!("{:?}... trying again...", e)),
             }
             attempt += 1;
             if attempt > max_attempts {
-                println!("max attempts reached, quitting");
+                debug(format!("max attempts reached, quitting"));
                 panic!();
             }
         }
@@ -325,13 +321,13 @@ impl App {
             // wait a bit
             thread::sleep(Duration::from_secs(PEER_CONNECT_REFRESH as u64));
 
-            println!("Doing peer refresh");
+            debug(format!("Doing peer refresh"));
             for (ip, port) in &self.possible_peers {
-                println!("checking peer {:?}", ip);
+                debug(format!("checking peer {:?}", ip));
                 if self.connected_to_peer(ip) {
-                    println!("already connected to peer, skipping!");
+                    debug(format!("already connected to peer, skipping!"));
                 } else {
-                    println!("not connected, adding to list");
+                    debug(format!("not connected, adding to list"));
                     // send to peer connection
                     peer_sender.send((ip.clone(), port.clone()));
                 }
@@ -344,7 +340,7 @@ impl App {
         join_connection_workers("conn/dl", dl_workers);
         join_connection_workers("assembly", asm_workers);
 
-        println!("Done");
+        debug(format!("Done"));
 
         Ok(())
     }
