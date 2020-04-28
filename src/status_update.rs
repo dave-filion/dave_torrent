@@ -7,6 +7,8 @@ use crate::logging::debug;
 use std::net::IpAddr;
 
 pub enum StatusUpdate {
+    Connected,
+    Announced,
     PeerConnect(IpAddr),
     PeerDisconnect(IpAddr),
 }
@@ -18,19 +20,27 @@ pub fn init_status_worker(
 
     let handle = std::thread::spawn(move || {
         let mut connected_peers = 0;
+        print!("\rSTARTING...");
         loop {
             match status_recv.recv() {
                 Ok(update) => {
                     match update {
+                        StatusUpdate::Connected => {
+                            print!("\rConnected...");
+                        },
+                        StatusUpdate::Announced => {
+                            print!("\rConnected... Announced...Finding peers...");
+                        },
                         StatusUpdate::PeerConnect(ip) => {
                             connected_peers += 1;
+                            print!("\rConn Peers: {}", connected_peers);
                         },
                         StatusUpdate::PeerDisconnect(ip) => {
                             connected_peers -= 1;
+                            print!("\rConn Peers: {}", connected_peers);
                         }
                     }
                     // rewrite status to std out
-                    print!("\r Conn Peers: {}", connected_peers);
                     stdout().flush();
                 },
                 Err(_e) => {

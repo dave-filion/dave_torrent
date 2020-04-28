@@ -234,6 +234,10 @@ impl App {
         // open output dir if not created
         let output_dir = make_output_dir(filename);
 
+        // init status worker channel and thread
+        let (status_sender, status_recv) = unbounded();
+        let status_worker = init_status_worker(status_recv);
+
 
         //*
         // CONNECT TO TRACKER
@@ -269,6 +273,7 @@ impl App {
 
         // send request packet and return connection id
         let conn_id_bytes = perform_connection(&sock)?;
+        status_sender.send(StatusUpdate::Connected);
 
         // generate persistent peer id and tx id
         let peer_id = rand::thread_rng().gen::<[u8; 20]>();
@@ -291,10 +296,7 @@ impl App {
         if tx_id_int != announce_resp.transaction_id {
             panic!("TX id did not equal announce response, quitting");
         }
-
-        // init status worker channel and thread
-        let (status_sender, status_recv) = unbounded();
-        let status_worker = init_status_worker(status_recv);
+        status_sender.send(StatusUpdate::Announced);
 
         //*
         // GENERATE PIECE MANAGER AND WORK QUE

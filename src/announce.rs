@@ -8,6 +8,7 @@ use std::time::Duration;
 use failure::{Error, err_msg};
 
 use crate::*;
+use crate::logging::debug;
 
 #[derive(Debug)]
 pub struct AnnounceResponse {
@@ -109,28 +110,24 @@ pub fn perform_announce(
         if attempt > max_attempts {
             return Err(err_msg("max attempts reached. quitting"));
         }
-        print!("> Announcing: ({}):", attempt);
 
         match sock.send(&announce_packet) {
             Ok(_) => {
-                println!("sent!");
+                debug(format!("sent!"));
             },
             Err(e) => {
-                println!("error {:?}", e);
+                debug(format!("error {:?}", e));
                 attempt += 1;
                 continue;
             }
         }
 
-        print!("> Announce response: ");
         let mut response_buf = [0; 512];
         match sock.recv(&mut response_buf) {
             Ok(_bytes_read) => {
-                println!("got it!");
                 return Ok(response_buf.to_vec().into());
             },
             Err(e) => {
-                println!("error {:?}",e);
                 attempt += 1;
                 continue;
             }

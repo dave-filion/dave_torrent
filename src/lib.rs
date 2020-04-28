@@ -6,6 +6,7 @@ use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use failure::{Error, err_msg};
 use lava_torrent::torrent::v1::Torrent;
+use crate::logging::debug;
 
 pub mod download;
 pub mod peer;
@@ -123,14 +124,14 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
             return Err(err_msg("Max attempts reached... quitting"));
         }
 
-        print!("> Perform connection attempt ({}):", attempt);
+        debug(format!("> Perform connection attempt ({}):", attempt));
         // send message to remote udp port
         match sock.send(&connect_packet) {
             Ok(_) => {
-                println!(" sent!");
+                debug(format!(" sent!"));
             },
             Err(e) => {
-                println!("Error sending conn request: {:?}", e);
+                debug(format!("Error sending conn request: {:?}", e));
                 attempt += 1; // try again
                 continue;
             }
@@ -144,7 +145,7 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
                 return Ok(conn_id_bytes)
             },
             Err(e) => {
-                println!("Error recv response: {:?}", e);
+                debug(format!("Error recv response: {:?}", e));
                 attempt += 1; // try again
                 continue
             }
