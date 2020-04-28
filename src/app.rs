@@ -20,6 +20,7 @@ use crate::status_update::{init_status_worker, StatusUpdate};
 
 const DL_WORKERS: usize = 4;
 const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
+const DO_PEER_REATTEMPT: bool = false; // should we attempt to reconnect to peers?
 
 type PeerAddr = (IpAddr, u16);
 
@@ -30,7 +31,7 @@ pub struct ThreadWorker {
 
 fn get_torrent_size(t: &Torrent) -> i64 {
     // calculate how many files and total torrent size
-    if t.files.is_none() {
+    if t.files.is_some() {
         // sum all file sizes
         t.files.as_ref().unwrap().iter().map(|f| f.length).sum()
     } else {
@@ -327,23 +328,26 @@ impl App {
 
         // Download happening now, need a way to refresh peers to try reconnect
         // Do peer refresh
-        loop {
-            // wait a bit
-            thread::sleep(Duration::from_secs(PEER_CONNECT_REFRESH as u64));
+        if DO_PEER_REATTEMPT {
+            loop {
+                // wait a bit
+                thread::sleep(Duration::from_secs(PEER_CONNECT_REFRESH as u64));
 
-            debug(format!("Doing peer refresh"));
-            for (ip, port) in &self.possible_peers {
-                debug(format!("checking peer {:?}", ip));
-                if self.connected_to_peer(ip) {
-                    debug(format!("already connected to peer, skipping!"));
-                } else {
-                    debug(format!("not connected, adding to list"));
-                    // send to peer connection
-                    let _result = peer_sender.send((ip.clone(), port.clone()));
+                debug(format!("Doing peer refresh"));
+                for (ip, port) in &self.possible_peers {
+                    debug(format!("checking peer {:?}", ip));
+                    if self.connected_to_peer(ip) {
+                        debug(format!("already connected to peer, skipping!"));
+                    } else {
+                        debug(format!("not connected, adding to list"));
+                        // send to peer connection
+                        let _result = peer_sender.send((ip.clone(), port.clone()));
+                    }
                 }
             }
-
         }
+
+        thread::sleep(Duration::from_secs(30));
 
         // Shutdown
         drop(peer_sender);
@@ -361,6 +365,14 @@ impl App {
 mod test {
     use super::*;
     use std::net::{IpAddr, SocketAddr, TcpStream};
+    use crate::print_torrent_info;
+
+    #[test]
+    fn test_manjaro_torrent() {
+        let filepath = "manjaro-kde-20.0-200426-linux56.iso.torrent";
+        let torrent = Torrent::read_from_file(filepath).unwrap();
+        print_torrent_info(&torrent);
+    }
 
     #[test]
     fn test_get_torrent_size() {
