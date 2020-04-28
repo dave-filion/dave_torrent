@@ -8,6 +8,8 @@ use std::time::Duration;
 use std::{thread, fs};
 use failure::Error;
 use crossbeam::crossbeam_channel::{unbounded, Sender, Receiver};
+use reqwest::Url;
+use hex::encode;
 
 use crate::peer::{attempt_peer_download, attempt_peer_connect};
 use crate::{get_socket_addr, perform_connection, get_protocol};
@@ -17,6 +19,7 @@ use crate::download::{Block, WorkChunk};
 use crate::logging::{debug};
 use std::sync::{Arc, Mutex};
 use crate::status_update::{init_status_worker, StatusUpdate};
+use failure::_core::str::from_utf8;
 
 const DL_WORKERS: usize = 4;
 const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
@@ -76,8 +79,40 @@ pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker
     debug(format!("All {} workers shut down/joined", worker_name));
 }
 
-pub fn announce_http() -> Result<AnnounceResponse, Error> {
-    unimplemented!("implmenet announce http");
+pub fn announce_http(announce_url: &str,
+                     status_sender: &Sender<StatusUpdate>,
+                     info_hash: &str,
+                     torrent_length: i64,
+                     peer_id: &str,
+                     tx_id: &[u8; 4]) -> Result<AnnounceResponse, Error> {
+    debug(format!("http announce url : {:?}", announce_url));
+
+    let mut url = Url::parse(announce_url)?;
+    url.query_pairs_mut()
+        .append_pair("peer_id", peer_id)
+        .append_pair("info_hash", info_hash)
+        .append_pair("port", "6881")
+        .append_pair("uploaded", "0")
+        .append_pair("downloaded", "0")
+        .append_pair("left", format!("{}", torrent_length).as_str());
+
+
+    println!("url with query = {:?}", url.as_str());
+
+    // create http request
+    let response = reqwest::blocking::get(announce_url);
+    match response {
+        Ok(body) => {
+            println!("got response: {:?}", body);
+        },
+        Err(e) => {
+            println!("error : {:?}", e);
+        }
+    }
+
+
+    unimplemented!("u");
+    // just make http request to tracker url?
 
     Ok(AnnounceResponse{
         action:0 ,
@@ -87,6 +122,10 @@ pub fn announce_http() -> Result<AnnounceResponse, Error> {
         seeders: 0,
         addresses: vec![]
     })
+}
+
+pub fn peer_id_str(p: &[u8; 20]) -> String {
+    hex::encode(p)
 }
 
 // connect and announce to tracker via udp
@@ -300,7 +339,7 @@ impl App {
 
         let torrent = Torrent::read_from_file(filepath).unwrap();
 
-        let _info_hash = torrent.info_hash();
+        let info_hash = torrent.info_hash();
         let info_hash_bytes = torrent.info_hash_bytes();
         // turn info hash from vec into byte array of length 20
         let mut info_hash_array = [0u8; 20];
@@ -334,7 +373,14 @@ impl App {
                 torrent.length,
                 &peer_id,
                 &tx_id),
-            TrackerProtocol::HTTP => announce_http(),
+            TrackerProtocol::HTTP => announce_http(
+                announce_url.as_str(),
+                &status_sender,
+                info_hash.as_str(),
+                torrent.length,
+                peer_id_str(&peer_id).as_str(),
+                &tx_id
+            ),
             TrackerProtocol::Unknown(p) => {
                 panic!("unknown protocol {:?}, cant connect", p);
             }
