@@ -10,8 +10,8 @@ use failure::Error;
 use crossbeam::crossbeam_channel::{unbounded, Sender, Receiver};
 
 use crate::peer::{attempt_peer_download, attempt_peer_connect};
-use crate::{get_socket_addr, perform_connection};
-use crate::announce::perform_announce;
+use crate::{get_socket_addr, perform_connection, get_protocol};
+use crate::announce::{perform_announce, AnnounceResponse};
 use crate::pieces::PieceManager;
 use crate::download::{Block, WorkChunk};
 use crate::logging::{debug};
@@ -24,6 +24,12 @@ const DO_PEER_REATTEMPT: bool = false; // should we attempt to reconnect to peer
 
 type PeerAddr = (IpAddr, u16);
 
+#[derive(Debug)]
+pub enum TrackerProtocol {
+    UDP,
+    HTTP,
+    Unknown(String),
+}
 pub struct ThreadWorker {
     pub id: usize,
     pub thread: Option<thread::JoinHandle<()>>
@@ -68,6 +74,80 @@ pub fn join_connection_workers(worker_name: &str, mut workers:  Vec<ThreadWorker
         }
     }
     debug(format!("All {} workers shut down/joined", worker_name));
+}
+
+pub fn announce_http() -> Result<AnnounceResponse, Error> {
+    unimplemented!("implmenet announce http");
+
+    Ok(AnnounceResponse{
+        action:0 ,
+        transaction_id: 0,
+        interval: 0,
+        leechers: 0,
+        seeders: 0,
+        addresses: vec![]
+    })
+}
+
+// connect and announce to tracker via udp
+pub fn announce_udp(announce_url: &str,
+                    status_sender: &Sender<StatusUpdate>,
+                    info_hash_bytes: &Vec<u8>,
+                    torrent_length: i64,
+                    peer_id: &[u8; 20],
+                    tx_id: &[u8; 4]) -> Result<AnnounceResponse, Error> {
+    let local_address = "0.0.0.0:34254";
+    let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
+
+    // set rw timemout on sock
+    sock.set_write_timeout(Some(Duration::from_secs(2)))?;
+    sock.set_read_timeout(Some(Duration::from_secs(2)))?;
+
+    // connect to remote addr (retry on fail)
+    let remote_addr = get_socket_addr(announce_url);
+
+    debug(format!("> Connecting to tracker"));
+    let max_attempts = 5;
+    let mut attempt = 1;
+    loop {
+        print!("({}): ", attempt);
+        match sock.connect(remote_addr) {
+            Ok(_) => {
+                debug(format!("connected!"));
+                break;
+            },
+            Err(e) => debug(format!("{:?}... trying again...", e)),
+        }
+        attempt += 1;
+        if attempt > max_attempts {
+            debug(format!("max attempts reached, quitting"));
+            panic!();
+        }
+    }
+
+    // send request packet and return connection id
+    let conn_id_bytes = perform_connection(&sock)?;
+    status_sender.send(StatusUpdate::Connected);
+
+
+    //*
+    // SEND ANNOUNCE REQUEST
+    let announce_resp = perform_announce(
+        &sock,
+        &conn_id_bytes,
+        info_hash_bytes,
+        torrent_length as u64,
+        34264,
+        peer_id,
+        tx_id,
+    )?;
+
+    // check that tx id is the same
+    let tx_id_int = BigEndian::read_u32(tx_id);
+    if tx_id_int != announce_resp.transaction_id {
+        panic!("TX id did not equal announce response, quitting");
+    }
+    Ok(announce_resp)
 }
 
 pub struct App {
@@ -239,64 +319,27 @@ impl App {
         let (status_sender, status_recv) = unbounded();
         let status_worker = init_status_worker(status_recv);
 
-
-        //*
-        // CONNECT TO TRACKER
-        // // bind socket to local port
-        let local_address = "0.0.0.0:34254";
-        let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
-
-        // set rw timemout on sock
-        sock.set_write_timeout(Some(Duration::from_secs(2)))?;
-        sock.set_read_timeout(Some(Duration::from_secs(2)))?;
-
-        // connect to remote addr (retry on fail)
-        let remote_addr = get_socket_addr(announce_url.as_str());
-
-        debug(format!("> Connecting to tracker"));
-        let max_attempts = 5;
-        let mut attempt = 1;
-        loop {
-            print!("({}): ", attempt);
-            match sock.connect(remote_addr) {
-                Ok(_) => {
-                    debug(format!("connected!"));
-                    break;
-                },
-                Err(e) => debug(format!("{:?}... trying again...", e)),
-            }
-            attempt += 1;
-            if attempt > max_attempts {
-                debug(format!("max attempts reached, quitting"));
-                panic!();
-            }
-        }
-
-        // send request packet and return connection id
-        let conn_id_bytes = perform_connection(&sock)?;
-        status_sender.send(StatusUpdate::Connected);
-
         // generate persistent peer id and tx id
         let peer_id = rand::thread_rng().gen::<[u8; 20]>();
         let tx_id = rand::thread_rng().gen::<[u8; 4]>();
 
-        //*
-        // SEND ANNOUNCE REQUEST
-        let announce_resp = perform_announce(
-            &sock,
-            &conn_id_bytes,
-            &info_hash_bytes,
-            torrent.length as u64,
-            34264,
-            &peer_id,
-            &tx_id,
-        )?;
+        // announce based on protocol
+        let protocol = get_protocol(announce_url.as_str());
+        debug(format!("protocol is {:?}", protocol));
+        let announce_resp = match protocol {
+            TrackerProtocol::UDP => announce_udp(
+                announce_url.as_str(),
+                &status_sender,
+                &info_hash_bytes,
+                torrent.length,
+                &peer_id,
+                &tx_id),
+            TrackerProtocol::HTTP => announce_http(),
+            TrackerProtocol::Unknown(p) => {
+                panic!("unknown protocol {:?}, cant connect", p);
+            }
+        }?;
 
-        // check that tx id is the same
-        let tx_id_int = BigEndian::read_u32(&tx_id);
-        if tx_id_int != announce_resp.transaction_id {
-            panic!("TX id did not equal announce response, quitting");
-        }
         status_sender.send(StatusUpdate::Announced);
 
         //*

@@ -7,6 +7,7 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use failure::{Error, err_msg};
 use lava_torrent::torrent::v1::Torrent;
 use crate::logging::debug;
+use crate::app::TrackerProtocol;
 
 pub mod download;
 pub mod peer;
@@ -99,16 +100,22 @@ pub fn get_conn_id_from_connect_response(response_buf: &[u8]) -> (u64, Vec<u8>) 
     )
 }
 
-
 pub fn get_socket_addr(announce_url: &str) -> SocketAddr {
+        let pieces: Vec<String> = announce_url.split("://").map(|s| s.to_string()).collect(); // seperates protocol from url
+        let protocol = pieces[0].as_str();
+    let url = pieces[1].as_str();
+        url.to_socket_addrs().unwrap().next().unwrap()
+}
+
+
+pub fn get_protocol(announce_url: &str) -> TrackerProtocol {
     let pieces: Vec<String> = announce_url.split("://").map(|s| s.to_string()).collect(); // seperates protocol from url
     let protocol = pieces[0].as_str();
-    if protocol != "udp" {
-        panic!("cant handle non udp protocol: {}", protocol);
+    match protocol {
+        "udp" => TrackerProtocol::UDP,
+        "http" => TrackerProtocol::HTTP,
+        _ => TrackerProtocol::Unknown(protocol.to_string())
     }
-
-    let url = pieces[1].as_str();
-    url.to_socket_addrs().unwrap().next().unwrap()
 }
 
 // Tries to send connect request and receive response back, returns connection id bytes
