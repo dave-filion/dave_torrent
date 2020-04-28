@@ -13,6 +13,7 @@ pub mod announce;
 pub mod pieces;
 pub mod app;
 pub mod logging;
+pub mod status_update;
 
 pub const BLOCK_SIZE: u32 = 16384; // 16384 (2^14) bytes is accepted block size
 

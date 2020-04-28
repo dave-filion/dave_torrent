@@ -16,6 +16,7 @@ use crate::pieces::PieceManager;
 use crate::download::{Block, WorkChunk};
 use crate::logging::{debug};
 use std::sync::{Arc, Mutex};
+use crate::status_update::{init_status_worker, StatusUpdate};
 
 const DL_WORKERS: usize = 4;
 const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
@@ -107,6 +108,7 @@ impl App {
                             block_sender: Sender<Block>,
                             work_sender: Sender<WorkChunk>,
                             work_recv: Receiver<WorkChunk>,
+        status_sender: Sender<StatusUpdate>,
     ) -> Vec<ThreadWorker>{
         debug(format!("Initializing connections and download threads/workers"));
 
@@ -117,6 +119,8 @@ impl App {
             let peer_recv_clone = peer_recv.clone();
             let work_recv_clone = work_recv.clone();
             let work_sender_clone = work_sender.clone();
+            let status_sender_clone = status_sender.clone();
+
             // thread local copy of connected peers hash
             let connected_peers = self.connected_peers.clone();
 
@@ -128,7 +132,7 @@ impl App {
                         Ok((ip, port)) => {
                             // connect to peer and attempt download
                             let connect_result = attempt_peer_connect(ip.clone(), port.clone(), &info_hash_array, &peer_id);
-                            if let Err(_e) = connect_result {
+                            if let Err(e) = connect_result {
                                 // couldnt connect to this peer, continue to next
                                 // debug(format!("DL-{} Couldnt connect to peer: {:?}", i, ip);
                                 debug(format!("couldnt connect to peer: {:?}", ip));
@@ -136,7 +140,8 @@ impl App {
                             }
                             let peer = connect_result.unwrap();
 
-                            // self.add_connected_peer();
+                            // send status update
+                            status_sender_clone.send(StatusUpdate::PeerConnect(ip.clone()));
                             connected_peers.lock().unwrap().insert(ip.clone());
 
                             // kick off new thread and try downloading
@@ -146,11 +151,13 @@ impl App {
                                     debug(format!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
+                                    status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
                                 },
                                 Err(e) => {
                                     debug(format!("DL-{} Error peer download: {:?}", i, e));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
+                                    status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
                                 }
                             }
 
@@ -227,6 +234,7 @@ impl App {
         // open output dir if not created
         let output_dir = make_output_dir(filename);
 
+
         //*
         // CONNECT TO TRACKER
         // // bind socket to local port
@@ -284,6 +292,10 @@ impl App {
             panic!("TX id did not equal announce response, quitting");
         }
 
+        // init status worker channel and thread
+        let (status_sender, status_recv) = unbounded();
+        let status_worker = init_status_worker(status_recv);
+
         //*
         // GENERATE PIECE MANAGER AND WORK QUE
         let mut piece_man = PieceManager::init_from_torrent(&torrent, output_dir.clone());
@@ -303,7 +315,9 @@ impl App {
             peer_recv.clone(),
             block_sender.clone(),
             work_sender.clone(),
-            work_recv.clone());
+            work_recv.clone(),
+            status_sender.clone(),
+        );
 
         // seed channels with data from announce response
         self.seed_peer_channel(announce_resp.addresses, peer_sender.clone());
