@@ -17,16 +17,10 @@ use crate::download::{Block, WorkChunk};
 use crate::logging::{debug};
 use std::sync::{Arc, Mutex};
 
-const CONNECT_WORKERS: usize = 4;
 const DL_WORKERS: usize = 4;
 const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
 
 type PeerAddr = (IpAddr, u16);
-
-enum PeerUpdate {
-    Add(IpAddr),
-    Remove(IpAddr)
-}
 
 pub struct ThreadWorker {
     pub id: usize,
@@ -90,7 +84,7 @@ impl App {
     fn seed_work_channel(&mut self, work_queue: VecDeque<WorkChunk>, work_sender: Sender<WorkChunk>) {
         debug(format!("Seeding work channel with {} entries", work_queue.len()));
         for work in work_queue {
-            work_sender.send(work);
+            let _result = work_sender.send(work);
         }
         debug(format!("All work seeded"));
     }
@@ -102,7 +96,7 @@ impl App {
             let (addr, port) = p;
             debug(format!("-> {:?}:{:?}", addr, port));
             self.possible_peers.insert(p.clone());
-            peer_sender.send(p.clone());
+            let _result = peer_sender.send(p.clone());
         }
     }
 
@@ -134,13 +128,13 @@ impl App {
                         Ok((ip, port)) => {
                             // connect to peer and attempt download
                             let connect_result = attempt_peer_connect(ip.clone(), port.clone(), &info_hash_array, &peer_id);
-                            if let Err(e) = connect_result {
+                            if let Err(_e) = connect_result {
                                 // couldnt connect to this peer, continue to next
                                 // debug(format!("DL-{} Couldnt connect to peer: {:?}", i, ip);
                                 debug(format!("couldnt connect to peer: {:?}", ip));
                                 continue;
                             }
-                            let mut peer = connect_result.unwrap();
+                            let peer = connect_result.unwrap();
 
                             // self.add_connected_peer();
                             connected_peers.lock().unwrap().insert(ip.clone());
@@ -218,7 +212,7 @@ impl App {
 
         let torrent = Torrent::read_from_file(filepath).unwrap();
 
-        let info_hash = torrent.info_hash();
+        let _info_hash = torrent.info_hash();
         let info_hash_bytes = torrent.info_hash_bytes();
         // turn info hash from vec into byte array of length 20
         let mut info_hash_array = [0u8; 20];
@@ -226,8 +220,8 @@ impl App {
             info_hash_array[i] = info_hash_bytes.get(i).unwrap().clone();
         }
 
-        let total_size = get_torrent_size(&torrent);
-        let piece_size = torrent.piece_length;
+        let _total_size = get_torrent_size(&torrent);
+        let _piece_size = torrent.piece_length;
         let announce_url = torrent.announce.as_ref().expect("Need announce");
 
         // open output dir if not created
@@ -240,8 +234,8 @@ impl App {
         let sock = UdpSocket::bind(local_address).expect("Couldnt bind to address");
 
         // set rw timemout on sock
-        sock.set_write_timeout(Some(Duration::from_secs(2)));
-        sock.set_read_timeout(Some(Duration::from_secs(2)));
+        sock.set_write_timeout(Some(Duration::from_secs(2)))?;
+        sock.set_read_timeout(Some(Duration::from_secs(2)))?;
 
         // connect to remote addr (retry on fail)
         let remote_addr = get_socket_addr(announce_url.as_str());
@@ -293,7 +287,7 @@ impl App {
         //*
         // GENERATE PIECE MANAGER AND WORK QUE
         let mut piece_man = PieceManager::init_from_torrent(&torrent, output_dir.clone());
-        let mut work_queue = piece_man.init_work_queue();
+        let work_queue = piece_man.init_work_queue();
         // work_sender puts block chunks on channel, peer channels read
 
         // make all channels
@@ -329,7 +323,7 @@ impl App {
                 } else {
                     debug(format!("not connected, adding to list"));
                     // send to peer connection
-                    peer_sender.send((ip.clone(), port.clone()));
+                    let _result = peer_sender.send((ip.clone(), port.clone()));
                 }
             }
 

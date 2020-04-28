@@ -371,7 +371,7 @@ pub fn assemble_files_from_pieces(output_dir: &str, file_list: Vec<(PathBuf, i64
 
                         current_piece += 1;
                     },
-                    Err(e) => {
+                    Err(_e) => {
                         debug(format!("Out of files to read!"));
                         return;
                     }

@@ -3,7 +3,7 @@ use std::io::{Cursor, Read, Write};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::time::Duration;
 use failure::{Error, err_msg};
 

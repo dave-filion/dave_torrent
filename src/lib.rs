@@ -4,7 +4,6 @@ use std::io::{Cursor};
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::time::Duration;
 use failure::{Error, err_msg};
 use lava_torrent::torrent::v1::Torrent;
 
@@ -138,7 +137,7 @@ pub fn perform_connection(sock: &UdpSocket) -> Result<Vec<u8>, Error> {
 
         let mut response_buf = [0; 16];
         match sock.recv(&mut response_buf) {
-            Ok(bytes_read) => {
+            Ok(_bytes_read) => {
                 // extract conn id
                 let (_conn_id_int, conn_id_bytes) = get_conn_id_from_connect_response(&response_buf);
                 return Ok(conn_id_bytes)

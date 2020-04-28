@@ -3,7 +3,7 @@ use std::io::{Cursor, Read, Write};
 use std::thread;
 
 use bytebuffer::ByteBuffer;
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use failure::err_msg;
 use failure::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
@@ -76,13 +76,13 @@ pub fn attempt_peer_download(
 
                         if let Err(e) = processing_chan.send(block) {
                             println!("Error fetching block: {}-{} {:?} adding back to work channel",next_chunk.piece_index, next_chunk.block_id, e);
-                            work_sender.send(next_chunk);
+                            work_sender.send(next_chunk)?;
                             break;
                         }
                     }
                     Err(e) => {
                         println!("Error fetching block: {}-{} {:?} adding back to work channel",next_chunk.piece_index, next_chunk.block_id, e);
-                        work_sender.send(next_chunk);
+                        work_sender.send(next_chunk)?;
                         break;
                     }
                 }
@@ -423,7 +423,7 @@ impl Peer {
                 // slice only section of buf written to
                 let sliced_buf = &read_buf[..bytes_read];
                 let msg = parse_peer_msg(sliced_buf)?;
-                if let PeerMessage::Piece(msg_size, piece_id, offset, data) = msg {
+                if let PeerMessage::Piece(msg_size, piece_id, _offset, data) = msg {
                     total_msg_size = msg_size as isize;
                     total_bytes_read += bytes_read as isize;
 
