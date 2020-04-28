@@ -100,10 +100,10 @@ pub fn announce_http(announce_url: &str,
     println!("url with query = {:?}", url.as_str());
 
     // create http request
-    let response = reqwest::blocking::get(announce_url);
+    let response = reqwest::blocking::get(url);
     match response {
         Ok(body) => {
-            println!("got response: {:?}", body);
+            println!("got response: {:?}", body.text());
         },
         Err(e) => {
             println!("error : {:?}", e);
