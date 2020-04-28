@@ -362,10 +362,11 @@ impl App {
         let peer_id = rand::thread_rng().gen::<[u8; 20]>();
         let tx_id = rand::thread_rng().gen::<[u8; 4]>();
 
-        // announce based on protocol
-        let protocol = get_protocol(announce_url.as_str());
-        debug(format!("protocol is {:?}", protocol));
-        let announce_resp = match protocol {
+        // determine announce url to use
+        let (prot, announce_url) = get_announce_url(&torrent);
+        debug(format!("protocol is {:?}, url={}", prot, announce_url));
+
+        let announce_resp = match prot {
             TrackerProtocol::UDP => announce_udp(
                 announce_url.as_str(),
                 &status_sender,
@@ -449,6 +450,30 @@ impl App {
     }
 }
 
+pub fn get_announce_url(t: &Torrent) -> (TrackerProtocol, String){
+    // check if announce list is present
+    if let Some(announce_list) = &t.announce_list {
+        for list in announce_list {
+            for announce in list {
+                let protocol = get_protocol(announce.as_str());
+                if let TrackerProtocol::UDP = protocol {
+                    println!("found a udp protocol, returning");
+                    return (TrackerProtocol::UDP, announce.clone())
+                }
+            }
+        }
+    }
+
+    // otherwise just return the http
+    match &t.announce {
+        Some(url) => {
+            return (TrackerProtocol::HTTP, url.clone())
+        },
+        None => {
+            panic!("Dont know what announce url to use!")
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -457,10 +482,12 @@ mod test {
     use crate::print_torrent_info;
 
     #[test]
-    fn test_manjaro_torrent() {
+    fn test_manjaro_torrent_percent_encoding() {
         let filepath = "manjaro-kde-20.0-200426-linux56.iso.torrent";
         let torrent = Torrent::read_from_file(filepath).unwrap();
         print_torrent_info(&torrent);
+        let (prot, url) = get_announce_url(&torrent);
+        println!("pro = {:?} url = {}", prot, url);
     }
 
     #[test]

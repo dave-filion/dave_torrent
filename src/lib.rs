@@ -27,6 +27,7 @@ pub fn print_torrent_info(t: &Torrent) {
     println!("Piece number = {}", t.pieces.len());
     println!("info hash = {}", t.info_hash());
     println!("announce url: {}", t.announce.as_ref().unwrap());
+    println!("announce list: {:?}", t.announce_list);
     // print files
     if t.files.is_some() {
         println!("Files:");

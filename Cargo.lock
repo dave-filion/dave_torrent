@@ -226,6 +226,7 @@ dependencies = [
  "failure",
  "hex",
  "lava_torrent",
+ "percent-encoding",
  "rand",
  "reqwest",
  "sha-1",
