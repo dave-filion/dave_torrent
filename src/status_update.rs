@@ -41,7 +41,9 @@ pub fn init_status_worker(
                         }
                     }
                     // rewrite status to std out
-                    stdout().flush();
+                    if let Err(e) = stdout().flush() {
+                        println!("Error flushing stdout while updating status! {:?}", e);
+                    }
                 },
                 Err(_e) => {
                     break;

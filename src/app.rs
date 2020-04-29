@@ -166,7 +166,7 @@ pub fn announce_udp(announce_url: &str,
 
     // send request packet and return connection id
     let conn_id_bytes = perform_connection(&sock)?;
-    status_sender.send(StatusUpdate::Connected);
+    status_sender.send(StatusUpdate::Connected)?;
 
 
     //*
@@ -261,7 +261,7 @@ impl App {
                             let peer = connect_result.unwrap();
 
                             // send status update
-                            status_sender_clone.send(StatusUpdate::PeerConnect(ip.clone()));
+                            let _r = status_sender_clone.send(StatusUpdate::PeerConnect(ip.clone()));
                             connected_peers.lock().unwrap().insert(ip.clone());
 
                             // kick off new thread and try downloading
