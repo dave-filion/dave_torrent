@@ -271,13 +271,13 @@ impl App {
                                     debug(format!("DL-{} Successful peer download, disconnecting from peer {:?}", i, ip));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
-                                    status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
+                                    let _r = status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
                                 },
                                 Err(e) => {
                                     debug(format!("DL-{} Error peer download: {:?}", i, e));
                                     // self.remove_connected_peer(&ip);
                                     connected_peers.lock().unwrap().remove(&ip);
-                                    status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
+                                    let _r = status_sender_clone.send(StatusUpdate::PeerDisconnect(ip.clone()));
                                 }
                             }
 
