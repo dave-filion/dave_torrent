@@ -22,35 +22,37 @@ pub fn attempt_peer_connect(
     info_hash_array: &[u8; 20],
     peer_id: &[u8; 20],
 ) -> Result<Peer, Error> {
-    let peer_result = Peer::new(
+    let mut peer = Peer::new(
         ip.clone(),
         port.clone(),
         info_hash_array.clone(),
-        peer_id.clone(),
+        peer_id.clone()
     );
 
-    if let Err(e) = peer_result {
-        return Err(err_msg(e));
+    // connect
+    if let Err(e) = peer.connect() {
+        println!("Error connecting {:?} = {:?}", peer.ip, e);
+        return Err(err_msg(format!("error connecting: {:?}", e)))
     }
+    println!("connected to {:?}", peer.ip);
 
-    let mut peer = peer_result.unwrap();
-    let handshake_result = peer.perform_handshake();
-    if let Err(e) = handshake_result {
-        println!("handshake error for ip: {:?}", peer.ip);
+    // handshake
+    if let Err(e) = peer.perform_handshake() {
+        println!("Error handshake for ip: {:?}", peer.ip);
         return Result::Err(err_msg(e));
     }
+    println!("Handshaked with {:?}", peer.ip);
 
+    // rcv bitfield
     peer.recv_garbage();
+
+    // send interested
     peer.send_interested();
     println!("send interested to peer: {:?}", peer.ip);
 
-    match peer.recv_unchoke() {
-        Ok(()) => {
-            println!("peer {:?} unchoked! ready to dl", peer.ip);
-        },
-        Err(e) => {
-            println!("error unchoking peer: {:?} {:?}", peer.ip, e)
-        }
+    if let Err(e) = peer.recv_unchoke() {
+        println!("Error unchoking:{:?} = {:?}", peer.ip, e)
+        // TODO should return error
     }
 
     Ok(peer)
@@ -282,7 +284,7 @@ pub fn make_request_msg(piece_index: u32, begin: u32, len: u32) -> Vec<u8> {
 #[derive(Debug)]
 pub struct Peer {
     choked: bool,
-    stream: TcpStream,
+    stream: Option<TcpStream>,
     ip: IpAddr,
     port: u16,
     info_hash: [u8; 20],
@@ -297,32 +299,37 @@ impl Peer {
         port: u16,
         info_hash: [u8; 20],
         peer_id: [u8; 20],
-    ) -> Result<Self, Error> {
-        let sock_addr = SocketAddr::new(ip, port);
-        // 5 sec connection timeout
-        if let Ok(stream) = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(2)) {
-            // set stream to blocking
-            stream
-                .set_nonblocking(false)
-                .expect("cant set stream to blocking");
-            Result::Ok(Peer {
-                choked: false,
-                stream,
-                ip,
-                port,
-                info_hash,
-                peer_id,
-                bitfield: None,
-            })
-        } else {
-            Result::Err(err_msg("Cant connect to peer"))
+    ) -> Self {
+        Peer {
+            choked: false,
+            stream: None,
+            ip,
+            port,
+            info_hash,
+            peer_id,
+            bitfield: None,
         }
     }
+
+    pub fn connect(&mut self) -> Result<(), Error>{
+        let ip = self.ip;
+        let port = self.port;
+
+        let sock_addr = SocketAddr::new(ip, port);
+        let stream = TcpStream::connect_timeout(&sock_addr, Duration::from_secs(2))?;
+        // set stream to blocking
+        stream
+            .set_nonblocking(false)
+            .expect("cant set stream to blocking");
+        // set stream on peer
+        self.stream = Some(stream);
+        Ok(())
+   }
 
     // for some reason after handshake theres a bunch of nonesense sent, read it out of queue
     pub fn recv_garbage(&mut self) {
         let mut buf = [0; 512];
-        let read_result = self.stream.read(&mut buf);
+        let read_result = self.stream.as_ref().unwrap().read(&mut buf);
         match read_result {
             Ok(bytes_read) => {
                 let header = format!("peer {:?} bitfield", self.ip);
@@ -334,14 +341,9 @@ impl Peer {
     }
 
     pub fn maybe_revc_bitfield(&mut self) {
-        println!("reading for 5 sec to see if bitfield recv");
-        self.stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-
         // read 4 byte size
         let mut buf = [0; 4];
-        let read_result = self.stream.read(&mut buf);
+        let read_result = self.stream.as_ref().unwrap().read(&mut buf);
         match read_result {
             Ok(bytes_read) => {
                 println!("read bytes: {}", bytes_read);
@@ -356,7 +358,7 @@ impl Peer {
                 println!("msg size is {} bytes, reading...", msg_size);
 
                 let mut buf = Vec::with_capacity(msg_size as usize);
-                let read_result = self.stream.read(&mut buf);
+                let read_result = self.stream.as_ref().unwrap().read(&mut buf);
 
                 match read_result {
                     Ok(bytes_read) => {
@@ -379,15 +381,12 @@ impl Peer {
 
     pub fn send_interested(&mut self) {
         let msg = make_interested_msg();
-        self.stream.write_all(&msg).unwrap();
+        self.stream.as_ref().unwrap().write_all(&msg).unwrap();
     }
 
     pub fn recv_unchoke(&mut self) -> Result<(), Error> {
-        self.stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("Cant set read timeout");
         let mut buf = [0; 512];
-        let bytes_read = self.stream.read(&mut buf)?;
+        let bytes_read = self.stream.as_ref().unwrap().read(&mut buf)?;
         match parse_peer_msg(&buf)? {
             PeerMessage::Unchoke(_) => {
                 self.choked = false;
@@ -395,6 +394,7 @@ impl Peer {
             }
             _ => {
                 // println!("received msg other then choke! No good");
+                print_byte_array("unchoke msg", &buf);
                 Err(err_msg("received msg other then choke"))
             }
         }
@@ -410,10 +410,12 @@ impl Peer {
 
         // write request to stream
         let req = make_request_msg(piece_id, offset, length);
-        self.stream.write_all(&req).expect("write all failed"); //TODO error handle correctly
+        self.stream.as_ref().unwrap().write_all(&req).expect("write all failed"); //TODO error handle correctly
 
         // set longer read timeout in case of slow connection
         self.stream
+            .as_ref()
+            .unwrap()
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
 
@@ -426,7 +428,7 @@ impl Peer {
         let mut total_bytes_read: isize = 0;
         loop {
             let mut read_buf = [0; 5000];
-            let bytes_read = self.stream.read(&mut read_buf).expect("read filed"); // TODO error handle correctly
+            let bytes_read = self.stream.as_ref().unwrap().read(&mut read_buf).expect("read filed"); // TODO error handle correctly
 
             if i == 0 {
                 // slice only section of buf written to
@@ -467,17 +469,19 @@ impl Peer {
         let handshake = make_handshake(&self.peer_id, &self.info_hash);
 
         // write handshake to stream
-        let write_result = self.stream.write_all(&handshake);
+        let write_result = self.stream.as_ref().unwrap().write_all(&handshake);
         println!("wrote handshake to  {:?}", self.ip);
 
 
         if let Ok(bytes_wrote) = write_result {
             // set read timeout
             self.stream
+                .as_ref()
+                .unwrap()
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .expect("Couldnt set read timeout");
             let mut hs_resp = [0; 128]; // needs to be more then 64
-            let read_result = self.stream.read(&mut hs_resp);
+            let read_result = self.stream.as_ref().unwrap().read(&mut hs_resp);
             if let Ok(bytes_read) = read_result {
                 println!("read {:?} bytes from handshake {:?}", bytes_read, self.ip);
                 let handshake_response = parse_handshake_response(&hs_resp.to_vec());
