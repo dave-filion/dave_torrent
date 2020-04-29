@@ -10,6 +10,8 @@ use failure::{Error, err_msg};
 use crate::*;
 use crate::logging::debug;
 
+const ANNOUNCE_RESP_BUFFER_SIZE: usize = 1024 * 10; // 10 kb
+
 #[derive(Debug)]
 pub struct AnnounceResponse {
     pub action: u32, // usually 1
@@ -113,21 +115,22 @@ pub fn perform_announce(
 
         match sock.send(&announce_packet) {
             Ok(_) => {
-                debug(format!("sent!"));
+                debug(format!("announce sent!"));
             },
             Err(e) => {
-                debug(format!("error {:?}", e));
+                debug(format!("announce error {:?}", e));
                 attempt += 1;
                 continue;
             }
         }
 
-        let mut response_buf = [0; 512];
+        let mut response_buf = [0; ANNOUNCE_RESP_BUFFER_SIZE];
         match sock.recv(&mut response_buf) {
             Ok(_bytes_read) => {
                 return Ok(response_buf.to_vec().into());
             },
             Err(e) => {
+                debug(format!("announce recv error: {:?}", e));
                 attempt += 1;
                 continue;
             }

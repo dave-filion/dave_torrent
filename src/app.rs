@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use crate::status_update::{init_status_worker, StatusUpdate};
 use failure::_core::str::from_utf8;
 
-const DL_WORKERS: usize = 4;
+const DL_WORKERS: usize = 1;
 const PEER_CONNECT_REFRESH: usize = 15; // try refreshing peers ever N secs
 const DO_PEER_REATTEMPT: bool = false; // should we attempt to reconnect to peers?
 
@@ -168,9 +168,6 @@ pub fn announce_udp(announce_url: &str,
     let conn_id_bytes = perform_connection(&sock)?;
     status_sender.send(StatusUpdate::Connected)?;
 
-
-    //*
-    // SEND ANNOUNCE REQUEST
     let announce_resp = perform_announce(
         &sock,
         &conn_id_bytes,
@@ -387,7 +384,9 @@ impl App {
             }
         }?;
 
+        // TODO send seeder and leecher values
         status_sender.send(StatusUpdate::Announced);
+        println!("ANNOUNCE RESP: {:?}", announce_resp);
 
         //*
         // GENERATE PIECE MANAGER AND WORK QUE

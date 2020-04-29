@@ -36,14 +36,22 @@ pub fn attempt_peer_connect(
     let mut peer = peer_result.unwrap();
     let handshake_result = peer.perform_handshake();
     if let Err(e) = handshake_result {
+        println!("handshake error for ip: {:?}", peer.ip);
         return Result::Err(err_msg(e));
     }
 
-    // actually not garbage, is bitfield
-    // TODO recv bitfield
     peer.recv_garbage();
     peer.send_interested();
-    peer.recv_unchoke()?;
+    println!("send interested to peer: {:?}", peer.ip);
+
+    match peer.recv_unchoke() {
+        Ok(()) => {
+            println!("peer {:?} unchoked! ready to dl", peer.ip);
+        },
+        Err(e) => {
+            println!("error unchoking peer: {:?} {:?}", peer.ip, e)
+        }
+    }
 
     Ok(peer)
 }
@@ -318,6 +326,7 @@ impl Peer {
         match read_result {
             Ok(bytes_read) => {
                 let header = format!("peer {:?} bitfield", self.ip);
+                println!("got {}", header);
                 // print_byte_array_len(header.as_str(), &buf, bytes_read);
             }
             Err(e) => {}
@@ -454,10 +463,14 @@ impl Peer {
     }
 
     pub fn perform_handshake(&mut self) -> Result<(), Error> {
+        debug(format!("performing handshake {:?}", self.ip));
         let handshake = make_handshake(&self.peer_id, &self.info_hash);
 
         // write handshake to stream
         let write_result = self.stream.write_all(&handshake);
+        println!("wrote handshake to  {:?}", self.ip);
+
+
         if let Ok(bytes_wrote) = write_result {
             // set read timeout
             self.stream
@@ -466,10 +479,13 @@ impl Peer {
             let mut hs_resp = [0; 128]; // needs to be more then 64
             let read_result = self.stream.read(&mut hs_resp);
             if let Ok(bytes_read) = read_result {
+                println!("read {:?} bytes from handshake {:?}", bytes_read, self.ip);
                 let handshake_response = parse_handshake_response(&hs_resp.to_vec());
+                println!("handshake response: {:?}", handshake_response);
 
                 // verify response is accurate
                 if handshake_response.protocol != "BitTorrent protocol" {
+                    println!("Handshake protocol isnt bittorrent protocol");
                     return Err(err_msg(format!(
                         "Handshake protocol incorrect: {}",
                         handshake_response.protocol
@@ -477,6 +493,7 @@ impl Peer {
                 }
 
                 if handshake_response.info_hash != self.info_hash {
+                    println!("handshake info hash doesnt match our info hash");
                     return Err(err_msg("Handshake Info hashes dont match!"));
                 }
 
@@ -486,6 +503,7 @@ impl Peer {
                 Err(err_msg("handshake response failure."))
             }
         } else {
+            println!("handshake write failed");
             Err(err_msg("handshake request failure."))
         }
     }
